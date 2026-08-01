@@ -1,0 +1,10 @@
+# Copy this file to backend.gcs.tfbackend (gitignored) and fill in the
+# real bucket name - the same value as state_bucket_name in your
+# terraform.tfvars / -var flags, and as the state_bucket_name output after
+# the first apply.
+#
+# Used only after the bucket already exists:
+#   terraform init -backend-config=backend.gcs.tfbackend -migrate-state
+
+bucket = "REPLACE_WITH_REAL_BUCKET_NAME"
+prefix = "bootstrap"
