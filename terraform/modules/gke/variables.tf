@@ -36,7 +36,7 @@ variable "services_range_name" {
 }
 
 variable "node_machine_type" {
-  description = "Machine type for the Spot node pool. e2-medium (2 vCPU/4GB) balances cost against having enough headroom for later phases' workloads (Postgres, Redis, RabbitMQ, Kafka, Vault, Airflow)."
+  description = "Machine type for the Spot node pool. e2-medium (2 vCPU/4GB) is sized for Phases 1-3 (cluster bootstrap, Argo CD, Vault/ESO); revisit before Phase 5/6 adds real application and data workloads (Postgres, Redis, RabbitMQ, Kafka, Airflow)."
   type        = string
   default     = "e2-medium"
 }
@@ -45,12 +45,6 @@ variable "node_disk_size_gb" {
   description = "Boot disk size per node, in GB."
   type        = number
   default     = 30
-}
-
-variable "node_disk_type" {
-  description = "Boot disk type per node."
-  type        = string
-  default     = "pd-standard"
 }
 
 variable "min_node_count" {

@@ -81,7 +81,11 @@ resource "google_container_node_pool" "spot" {
   node_config {
     machine_type = var.node_machine_type
     disk_size_gb = var.node_disk_size_gb
-    disk_type    = var.node_disk_type
+    # disk_type intentionally omitted: accept the provider/GKE default
+    # (pd-balanced, or hyperdisk-balanced where supported) rather than
+    # pinning pd-standard without a measured cost reason
+    # (docs/conventions.md: "Prefer defaults from official docs over
+    # custom tuning without a measured reason").
 
     # Spot VMs: same machine, no capacity guarantee, no minimum runtime,
     # priced at a steep discount vs. on-demand. Acceptable for a lab where
@@ -97,4 +101,11 @@ resource "google_container_node_pool" "spot" {
       "https://www.googleapis.com/auth/cloud-platform",
     ]
   }
+
+  # IAM propagation is eventually consistent (GKE hardening guide: nodes
+  # using a service account without the right role can fail to register).
+  # Without this, Terraform is free to create the node pool concurrently
+  # with the IAM binding above, since neither's arguments reference the
+  # other.
+  depends_on = [google_project_iam_member.gke_nodes_default_sa]
 }
