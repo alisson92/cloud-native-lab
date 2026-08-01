@@ -111,4 +111,90 @@ only for its resources once created — so this does not violate the
 "budget alert first" rule in `docs/phases.md`: the budget alert remains
 the first *billable* resource, API enablement is just a non-billable
 precondition for it. The same reasoning applies to `container.googleapis.com`
-in `terraform/foundation/main.tf`.
+and `compute.googleapis.com` in `terraform/foundation/main.tf`.
+
+## Addendum (2026-08-01, round 2): the Cloud Resource Manager API needs a manual first enablement
+
+Verified against Google's own "Enabled services" documentation
+(docs.cloud.google.com/service-usage/docs/enabled-service): the list of APIs
+enabled by default on a new GCP project does **not** include
+`cloudresourcemanager.googleapis.com`. It also does not include the Cloud
+Billing Budget, Cloud Billing, Kubernetes Engine, or Compute Engine APIs this
+repository depends on — so every one of them genuinely needs an explicit
+`google_project_service` resource. That part was already correct.
+
+What round 1 missed: `data.google_project` (used inside `module.budget_alert`
+to resolve the numeric project number for `budget_filter.projects`) is
+itself backed by the Cloud Resource Manager API. On a fresh project, that API
+is disabled, so the very first `apply` fails before the budget alert is even
+attempted — undermining the whole point of this ADR (budget alert as the
+first thing applied).
+
+The fix is not as simple as "add a `google_project_service` for
+`cloudresourcemanager.googleapis.com`", because of a confirmed, long-standing
+chicken-and-egg problem in `hashicorp/terraform-provider-google`:
+
+- [Issue #6101](https://github.com/hashicorp/terraform-provider-google/issues/6101)
+  ("Enabling the Cloud Resource Manager API requires the Cloud Resource
+  Manager API") and
+  [Issue #11435](https://github.com/hashicorp/terraform-provider-google/issues/11435)
+  ("Cannot enable cloudresourcemanager.googleapis.com via Terraform") both
+  document the same root cause. Per HashiCorp maintainer
+  [@rileykarson's comment](https://github.com/hashicorp/terraform-provider-google/issues/11435#issuecomment-1095290207):
+  "The project service (service management) API draws quota/permissions from
+  the project of the service account (SA) in use rather than from the
+  project of the resource... you'll want to enable the service at project
+  creation (wherever in your pipeline — manually, with gcloud, or a separate
+  Terraform config)."
+- In this repository's layout, the Terraform service account used to apply
+  `terraform/bootstrap/` lives in the *same* project it is bootstrapping.
+  On a cold project (CRM never enabled), the Service Usage API call that
+  `google_project_service` makes to enable **any** service — including an
+  attempt to enable CRM itself — fails with "Cloud Resource Manager API has
+  not been used in project ... or it is disabled", because that call itself
+  needs CRM already enabled in the caller's own project. This is not a bug
+  fixed in a later provider version; it is inherent to how the Service Usage
+  API resolves quota, confirmed by the maintainer as expected behavior.
+- `gcloud`/Cloud Console-driven enablement (using a human operator's own
+  credentials, not Terraform's service account) does not hit this
+  constraint — this is exactly why every error message from this API tells
+  the user to "enable it by visiting console.developers.google.com" as the
+  resolution.
+
+Alternatives considered for this specific API:
+
+1. **Rely purely on a `google_project_service` resource, same pattern as the
+   other APIs, and hope it self-enables.** Rejected: per the confirmed
+   provider issues above, this does not reliably work on a cold, single-SA
+   project — the exact topology this repository uses.
+2. **Document a one-time manual prerequisite
+   (`gcloud services enable cloudresourcemanager.googleapis.com`) in
+   `terraform/bootstrap/README.md`, run once by the human operator before the
+   very first `apply`, while still declaring a `google_project_service`
+   resource for it in Terraform for state-tracking and self-documentation.**
+   (chosen) The manual step breaks the cycle exactly once per GCP project's
+   lifetime; the Terraform resource becomes a harmless no-op afterward (and
+   keeps `disable_on_destroy = false` so it's never disabled by a
+   `destroy`), consistent with how every other API in this repository is
+   declared.
+3. **Create a separate, tiny bootstrap-bootstrap project just to host the
+   Terraform service account, sidestepping the same-project constraint.**
+   Rejected: adds a second GCP project and a second budget surface for an
+   ephemeral lab, pure over-engineering for a one-time manual command.
+
+### Consequences
+
+- `terraform/bootstrap/main.tf` now declares
+  `google_project_service.cloudresourcemanager`, and every other
+  `google_project_service` resource in that config (plus `module.budget_alert`)
+  explicitly depends on it, so the Terraform dependency graph reflects the
+  real-world requirement even though the *first* enablement is manual.
+- This is the second documented exception (after ADR-002's public-repo
+  decision) to "no resource created outside Terraform": narrowly scoped to
+  enabling one specific API, required only once per GCP project, with the
+  root cause traced to a confirmed upstream provider/API limitation rather
+  than a shortcut taken for convenience.
+- Anyone bootstrapping a new GCP project for this repository must read
+  `terraform/bootstrap/README.md`'s "Prerequisite" section before running
+  `terraform init`/`apply` there, or the first `apply` will fail with a
+  Cloud Resource Manager API error.
