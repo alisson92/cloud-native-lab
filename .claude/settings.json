@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(terraform apply*)",
+      "Bash(terraform destroy*)",
+      "Bash(kubectl apply*)",
+      "Bash(kubectl delete*)",
+      "Bash(kubectl edit*)",
+      "Bash(helm install*)",
+      "Bash(helm upgrade*)",
+      "Bash(helm uninstall*)",
+      "Bash(gcloud * create *)",
+      "Bash(gcloud * delete *)",
+      "Bash(git push origin main*)"
+    ],
+    "allow": [
+      "Bash(terraform init*)",
+      "Bash(terraform validate*)",
+      "Bash(terraform plan*)",
+      "Bash(terraform fmt*)",
+      "Bash(kubectl get*)",
+      "Bash(kubectl describe*)",
+      "Bash(kubectl logs*)"
+    ]
+  }
+}
