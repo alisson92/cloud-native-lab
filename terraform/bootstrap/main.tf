@@ -12,6 +12,31 @@
 # Docs consulted:
 # - https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/storage_bucket
 # - https://developer.hashicorp.com/terraform/language/backend/gcs
+# - https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/project_service
+
+# APIs required before the budget alert can be created. A fresh GCP project
+# has both disabled: `google_billing_budget` needs the Cloud Billing Budget
+# API, and the `google_billing_account` data source (used inside the
+# budget-alert module) needs the Cloud Billing API. Enabling an API is a
+# free, non-billable operation, so this legitimately precedes the budget
+# alert without breaking the "budget first" rule in docs/phases.md (see
+# the note appended to docs/adr/003-terraform-bootstrap-sequence.md).
+resource "google_project_service" "billingbudgets" {
+  project = var.project_id
+  service = "billingbudgets.googleapis.com"
+
+  # Keep the API enabled after a `terraform destroy`: disabling it is a
+  # project-wide side effect with no cost benefit, and re-enabling on every
+  # rebuild only adds latency to the next `apply`.
+  disable_on_destroy = false
+}
+
+resource "google_project_service" "cloudbilling" {
+  project = var.project_id
+  service = "cloudbilling.googleapis.com"
+
+  disable_on_destroy = false
+}
 
 module "budget_alert" {
   source = "../modules/budget-alert"
@@ -20,6 +45,11 @@ module "budget_alert" {
   billing_account_id = var.billing_account_id
   amount             = var.budget_amount
   display_name       = "cloud-native-lab monthly budget"
+
+  depends_on = [
+    google_project_service.billingbudgets,
+    google_project_service.cloudbilling,
+  ]
 }
 
 resource "google_storage_bucket" "terraform_state" {
