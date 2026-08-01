@@ -6,12 +6,12 @@
 
 ## Phase 1 — Foundation (owner: platform-engineer)
 
-- [review] (platform-engineer) Terraform backend: GCS bucket for state (bootstrapped once, documented) — `terraform/bootstrap/`, see notes below
-- [review] (platform-engineer) Budget alert module — FIRST billable-adjacent resource, before everything — `terraform/modules/budget-alert/`
-- [review] (platform-engineer) VPC module (minimal: one subnet, secondary ranges for GKE) — `terraform/modules/vpc/`
-- [review] (platform-engineer) GKE module: zonal cluster, Spot node pool, sensible defaults — `terraform/modules/gke/`
-- [todo] (reviewer) Review Phase 1 modules against official Terraform/GKE docs
-- [todo] (HUMAN) Run `terraform apply` after review approval (bootstrap first, then foundation — see `terraform/README.md`)
+- [blocked] (platform-engineer) Terraform backend: GCS bucket for state (bootstrapped once, documented) — `terraform/bootstrap/`. Reviewer: CHANGES REQUESTED (missing API enablement)
+- [blocked] (platform-engineer) Budget alert module — FIRST billable-adjacent resource, before everything — `terraform/modules/budget-alert/`. Reviewer: CHANGES REQUESTED (hardcoded `currency_code = "USD"`, missing API enablement, broken ADR path reference)
+- [done] (platform-engineer) VPC module (minimal: one subnet, secondary ranges for GKE) — `terraform/modules/vpc/`. Reviewer: APPROVED with a nit (misleading comment on `private_ip_google_access`)
+- [blocked] (platform-engineer) GKE module: zonal cluster, Spot node pool, sensible defaults — `terraform/modules/gke/`. Reviewer: CHANGES REQUESTED (missing API enablement, missing `depends_on` on node pool for IAM propagation, undocumented `disk_type` deviation, misleading machine-type sizing claim)
+- [done] (reviewer) Review Phase 1 modules against official Terraform/GKE docs — verdict CHANGES REQUESTED, see notes below
+- [todo] (HUMAN) Run `terraform apply` after review approval (bootstrap first, then foundation — see `terraform/README.md`). Still blocked: findings below must be fixed first, then a human needs `gcloud auth application-default login` + real `project_id`/`billing_account_id` to produce a real plan.
 
 ## Phase 2 — Delivery (owner: gitops-engineer)
 
@@ -65,3 +65,37 @@
   supply a real `project_id`/`billing_account_id` before it can be
   produced and attached for the reviewer/human gate.
   Branch: `phase-1/terraform-foundation`.
+- (reviewer) Reviewed PR #2 against `docs/conventions.md` and official
+  HashiCorp/Google docs. Verdict: **CHANGES REQUESTED**. Ran `terraform fmt
+  -check -recursive`, `init`/`validate` on both root modules independently
+  (did not trust the platform-engineer's claims) — confirmed both are
+  clean, and confirmed the `plan` failures are purely credential/environment
+  related, not config bugs.
+  Blockers: (1) no `google_project_service` resources anywhere — a fresh
+  GCP project has `billingbudgets.googleapis.com`, `container.googleapis.com`,
+  etc. disabled, so the human's first `apply` will fail on exactly the
+  budget alert `docs/phases.md` calls non-negotiable; (2) `currency_code`
+  hardcoded to `USD` in the budget-alert module — will fail on a non-USD
+  billing account, should read `data.google_billing_account.account.currency_code`
+  instead.
+  Should-fix: missing `depends_on` between the GKE node pool and its IAM
+  binding (registration can race IAM propagation); `disk_type =
+  "pd-standard"` deviates from the provider/GKE default with no cited
+  reason; the `node_machine_type` variable description overstates what 2x
+  e2-medium Spot nodes can actually host; broken doc reference
+  (`docs/adr/003-bootstrap-sequence.md` instead of the real
+  `003-terraform-bootstrap-sequence.md`) in the budget-alert module comment.
+  Nits (orchestrator fixed directly, outside platform-engineer's scope):
+  dead `!*.tfvars.example`/`!*.tfbackend.example` gitignore rules removed
+  (no-ops — `*.tfvars` never matched `*.tfvars.example` to begin with);
+  Portuguese `.gitignore` comments translated to English (project rule:
+  English only); added missing `.claude/worktrees/` ignore rule (local
+  Agent-tool worktree state was showing as untracked).
+  Confirmed correct and left as-is: dedicated GKE node service account +
+  `roles/container.defaultNodeServiceAccount` (hardening guidance),
+  `remove_default_node_pool` pattern, `deletion_protection = false`
+  (justified for an ephemeral lab), VPC-native networking, the bootstrap
+  local-state-then-migrate sequence and ADR-003 itself.
+  Full findings with severities and doc citations kept in the orchestrator's
+  session; PR #2 comment thread is the durable record once posted.
+  Sent back to platform-engineer for a fix round.
