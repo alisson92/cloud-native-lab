@@ -31,3 +31,11 @@
 ## Log
 
 - (orchestrator) Board initialized.
+- (orchestrator) Repository bootstrapped: `.gitignore` scoped to the full
+  declared stack (Terraform, Python, Node, Kubernetes/Helm, secrets,
+  OS/editor artifacts), git initialized, initial docs/config committed one
+  file per commit. GitHub repo created public (required for branch
+  protection on the Free plan — see `docs/adr/002-public-repo-for-branch-protection.md`),
+  `main` protected (PR required, no force-push/deletion, admins enforced).
+  Bootstrap steps captured as standing convention in `docs/conventions.md`
+  under "Repository bootstrap".
