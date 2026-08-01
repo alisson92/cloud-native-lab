@@ -6,12 +6,12 @@
 
 ## Phase 1 — Foundation (owner: platform-engineer)
 
-- [review] (platform-engineer) Terraform backend: GCS bucket for state (bootstrapped once, documented) — `terraform/bootstrap/`. Fix round complete: `google_project_service` for `billingbudgets.googleapis.com`/`cloudbilling.googleapis.com` added, `module.budget_alert` depends on them (`disable_on_destroy = false`). See Log.
-- [review] (platform-engineer) Budget alert module — FIRST billable-adjacent resource, before everything — `terraform/modules/budget-alert/`. Fix round complete: `currency_code` now read from `data.google_billing_account.account.currency_code` (variable deleted), ADR path reference fixed. See Log.
+- [review] (platform-engineer) Terraform backend: GCS bucket for state (bootstrapped once, documented) — `terraform/bootstrap/`. Round 2 fix complete: `google_project_service.cloudresourcemanager` added (with a documented one-time manual `gcloud services enable` prerequisite — see Log), plus round 1's `billingbudgets.googleapis.com`/`cloudbilling.googleapis.com`. See Log.
+- [review] (platform-engineer) Budget alert module — FIRST billable-adjacent resource, before everything — `terraform/modules/budget-alert/`. No changes this round; round 1 fix (`currency_code` from `data.google_billing_account.account.currency_code`, ADR path reference) still holds. See Log.
 - [done] (platform-engineer) VPC module (minimal: one subnet, secondary ranges for GKE) — `terraform/modules/vpc/`. Reviewer: APPROVED with a nit (misleading comment on `private_ip_google_access`)
-- [review] (platform-engineer) GKE module: zonal cluster, Spot node pool, sensible defaults — `terraform/modules/gke/`. Fix round complete: `container.googleapis.com` enabled in `terraform/foundation/`, node pool now `depends_on` the IAM binding, `disk_type` pin dropped (provider default), machine-type description reworded to honest scope. See Log.
-- [done] (reviewer) Review Phase 1 modules against official Terraform/GKE docs — verdict CHANGES REQUESTED, see notes below
-- [todo] (HUMAN) Run `terraform apply` after review approval (bootstrap first, then foundation — see `terraform/README.md`). Still blocked: findings below must be fixed first, then a human needs `gcloud auth application-default login` + real `project_id`/`billing_account_id` to produce a real plan.
+- [review] (platform-engineer) GKE module: zonal cluster, Spot node pool, sensible defaults — `terraform/modules/gke/`. No module changes this round; `terraform/foundation/main.tf` (which wires it) now has an explicit `compute.googleapis.com` resource instead of relying on an unverified transitive-enable claim. See Log.
+- [done] (reviewer) Review Phase 1 modules against official Terraform/GKE docs — verdict CHANGES REQUESTED (round 1), then CHANGES REQUESTED again (round 2, small — see notes below), fix round 2 now complete, awaiting reviewer's third pass
+- [todo] (HUMAN) Run `terraform apply` after review approval (bootstrap first, then foundation — see `terraform/README.md`). Still blocked: reviewer's third pass on round 2 fixes must land first; also note the new one-time manual prerequisite in `terraform/bootstrap/README.md` (`gcloud services enable cloudresourcemanager.googleapis.com`) before the human's first `apply`, plus `gcloud auth application-default login` + real `project_id`/`billing_account_id` to produce a real plan.
 
 ## Phase 2 — Delivery (owner: gitops-engineer)
 
@@ -106,9 +106,12 @@
   `terraform/bootstrap/main.tf` (`module.budget_alert` depends on both,
   `disable_on_destroy = false`), `container.googleapis.com` in
   `terraform/foundation/main.tf` (both `module.vpc` and `module.gke`
-  depend on it, since enabling the Kubernetes Engine API transitively
-  enables the Compute Engine API it depends on — confirmed via Google's
-  own docs); appended a short addendum to
+  depend on it, on the claim that enabling the Kubernetes Engine API
+  transitively enables the Compute Engine API it depends on. **Correction
+  (round 2, see below): this was never actually confirmed in official docs —
+  it was an unverified assumption, since fixed by adding an explicit
+  `compute.googleapis.com` resource instead of relying on it.**); appended a
+  short addendum to
   `docs/adr/003-terraform-bootstrap-sequence.md` explaining why free API
   enablement doesn't break the "budget alert first" rule.
   (2) `currency_code` in `terraform/modules/budget-alert/` now reads
@@ -141,3 +144,74 @@
   logical change (API enablement, currency fix, GKE should-fixes, ADR-003
   addendum). Flipping the four Phase 1 code tasks back to `review` for
   the reviewer's second pass.
+- (reviewer) Second review of PR #2. Verdict: **CHANGES REQUESTED**, but
+  small — one new blocker (a residual gap in round 1's own fix, not a
+  regression) and one should-fix.
+  Blocker: `terraform/modules/budget-alert/main.tf`'s `data.google_project`
+  is backed by the Cloud Resource Manager API, which is never enabled
+  anywhere in the repo — round 1 enabled `billingbudgets`/`cloudbilling`/
+  `container` but missed `cloudresourcemanager.googleapis.com`, so the very
+  first `apply` (the budget alert) was still expected to fail.
+  Should-fix: the round-1 comment claiming `container.googleapis.com`
+  transitively enables `compute.googleapis.com` was never verified against
+  official docs (HashiCorp's own GKE tutorial says to enable both
+  explicitly); `google_compute_network`/`google_compute_subnetwork` in the
+  VPC module depend on this being true, so it needed an explicit resource,
+  not an assumption. Also flagged the TASKS.md log entry overstating this
+  as "confirmed via Google's own docs".
+  Sent back to platform-engineer for a second fix round.
+- (platform-engineer) Round 2 fix on PR #2, both findings addressed on
+  `phase-1/terraform-foundation` (worked from the existing branch — a
+  sibling agent worktree already had it checked out, so this worktree's
+  local branch was fast-forwarded to `origin/phase-1/terraform-foundation`
+  rather than creating a new branch):
+  Blocker: researched the Cloud Resource Manager API bootstrap problem
+  before writing any code. Confirmed via Google's own "Enabled services"
+  doc (docs.cloud.google.com/service-usage/docs/enabled-service) that
+  `cloudresourcemanager.googleapis.com` is genuinely not on the
+  default-enabled list for a new project (neither is `compute.googleapis.com`,
+  which independently supports the should-fix below). Then confirmed, via
+  `hashicorp/terraform-provider-google` issues #6101 and #11435 (fetched
+  directly from GitHub, including maintainer @rileykarson's comment on
+  #11435), that self-enabling CRM via `google_project_service` is a
+  genuine, unresolved chicken-and-egg on a cold project where Terraform's
+  service account lives in the same project being bootstrapped: the
+  Service Usage API draws its quota/permission check from the caller's own
+  project, so on a fresh project every `google_project_service` call
+  (including one enabling CRM itself) fails until CRM is already enabled.
+  This is exactly this repository's topology, so self-enabling cannot be
+  relied on. Fix: added `google_project_service.cloudresourcemanager` in
+  `terraform/bootstrap/main.tf` for declarative tracking/idempotency
+  (`disable_on_destroy = false`, wired into `depends_on` for the other two
+  `google_project_service` resources and `module.budget_alert`), **and**
+  documented a one-time manual prerequisite
+  (`gcloud services enable cloudresourcemanager.googleapis.com --project=<id>`,
+  run once per GCP project by a human before the very first `apply`) in a
+  new "Prerequisite" section of `terraform/bootstrap/README.md`, with the
+  root cause explained. Recorded the full research trail, citations, and
+  alternatives considered as a new addendum ("round 2") to
+  `docs/adr/003-terraform-bootstrap-sequence.md`.
+  Should-fix: added an explicit `google_project_service.compute` resource
+  in `terraform/foundation/main.tf` (`module.vpc` and `module.gke` both now
+  depend on both `compute.googleapis.com` and `container.googleapis.com`),
+  removed the unverified transitive-enable claim from the comment above
+  `google_project_service.container` and replaced it with the honest
+  rationale (HashiCorp's GKE tutorial instructs enabling both explicitly;
+  no official source confirms `google_project_service`'s enable mechanism
+  transitively activates dependent APIs — Cloud Console's ConsumerPolicy
+  hierarchical enablement is a different, unrelated mechanism). Corrected
+  the overstated round-1 log entry above in place rather than leaving it to
+  mislead future readers.
+  Verification: `terraform fmt -recursive -diff` clean (no changes needed)
+  on the whole `terraform/` tree; `terraform init -backend=false` +
+  `terraform validate` clean on both `terraform/bootstrap` and
+  `terraform/foundation` independently. Re-ran `terraform plan` with dummy
+  vars on both: `bootstrap` still fails at the provider stage ("could not
+  find default credentials"), `foundation` still fails at GCS backend init
+  ("Backend initialization required" / credentials, since it was run with
+  `-backend=false` then a config-only `init`) — same purely
+  environmental/credential failure mode as round 1, confirming this round
+  introduced no new config bug. Three code/doc commits (CRM API fix,
+  ADR-003 round-2 addendum, `compute.googleapis.com` should-fix), plus this
+  task-board update. Flipping the four Phase 1 code tasks back to `review`
+  for the reviewer's third pass.
