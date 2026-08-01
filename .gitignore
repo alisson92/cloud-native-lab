@@ -1,6 +1,6 @@
 # --- Windows/WSL artifacts ---
-# Alternate Data Stream criado pelo Windows Explorer ao baixar/copiar
-# arquivos (aparece em qualquer arquivo tocado via WSL <-> Windows)
+# Alternate Data Stream created by Windows Explorer when downloading/copying
+# files (shows up on any file touched via WSL <-> Windows)
 *:Zone.Identifier
 
 # --- Editores / IDE ---
@@ -27,13 +27,11 @@ override.tf.json
 *_override.tf.json
 .terraformrc
 terraform.rc
-# .terraform.lock.hcl NÃO é ignorado: deve ser versionado (garante
-# reprodutibilidade de providers entre máquinas/CI)
+# .terraform.lock.hcl is NOT ignored: it must be versioned (guarantees
+# reproducible providers across machines/CI)
 *.tfvars
 *.tfvars.json
-!*.tfvars.example
 *.tfbackend
-!*.tfbackend.example
 
 # --- Segredos / variáveis de ambiente ---
 .env
@@ -59,6 +57,9 @@ build/
 
 # --- Claude Code (config local do usuário) ---
 .claude/settings.local.json
+# Worktrees isolados criados pela tool Agent (isolation: "worktree") para
+# cada subagente — estado local de execução, nunca conteúdo do projeto
+.claude/worktrees/
 
 # --- Plugin "remember" (estado local de memória de sessão) ---
 .remember/
