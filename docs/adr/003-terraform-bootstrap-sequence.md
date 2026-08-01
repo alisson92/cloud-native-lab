@@ -146,9 +146,13 @@ chicken-and-egg problem in `hashicorp/terraform-provider-google`:
   project of the resource... you'll want to enable the service at project
   creation (wherever in your pipeline — manually, with gcloud, or a separate
   Terraform config)."
-- In this repository's layout, the Terraform service account used to apply
-  `terraform/bootstrap/` lives in the *same* project it is bootstrapping.
-  On a cold project (CRM never enabled), the Service Usage API call that
+- In this repository's layout, no dedicated Terraform service account exists
+  yet — the documented auth path is a human operator's own Application
+  Default Credentials (`gcloud auth application-default login`), whose
+  quota project is this same project it is bootstrapping. The maintainer's
+  "project of the service account" applies equally to a human identity's
+  quota project. On a cold project (CRM never enabled), the Service Usage
+  API call that
   `google_project_service` makes to enable **any** service — including an
   attempt to enable CRM itself — fails with "Cloud Resource Manager API has
   not been used in project ... or it is disabled", because that call itself
