@@ -4,7 +4,7 @@
 # purpose: docs/phases.md requires the budget alert to be the first billable
 # resource ever applied, before the Terraform state bucket itself. See
 # terraform/bootstrap/main.tf for how that ordering is enforced, and
-# docs/adr/003-bootstrap-sequence.md for the full rationale.
+# docs/adr/003-terraform-bootstrap-sequence.md for the full rationale.
 #
 # Docs consulted:
 # - https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/billing_budget
@@ -31,7 +31,10 @@ resource "google_billing_budget" "this" {
 
   amount {
     specified_amount {
-      currency_code = var.currency_code
+      # The Cloud Billing Budget API rejects a currency_code that doesn't
+      # match the billing account's own currency, so it is read from the
+      # account instead of being configurable/hardcoded here.
+      currency_code = data.google_billing_account.account.currency_code
       units         = tostring(var.amount)
     }
   }

@@ -20,7 +20,7 @@ variable "state_bucket_name" {
 }
 
 variable "budget_amount" {
-  description = "Monthly budget cap in USD, passed through to the budget-alert module."
+  description = "Monthly budget cap, in the billing account's own currency (see the budget-alert module, which reads it from data.google_billing_account.account.currency_code), passed through to the budget-alert module."
   type        = number
   default     = 20
 }

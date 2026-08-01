@@ -14,14 +14,8 @@ variable "display_name" {
   default     = "cloud-native-lab monthly budget"
 }
 
-variable "currency_code" {
-  description = "ISO 4217 currency code for the budget amount."
-  type        = string
-  default     = "USD"
-}
-
 variable "amount" {
-  description = "Monthly budget cap, in the unit of currency_code. Kept small: this is a lab, not production."
+  description = "Monthly budget cap, in the billing account's own currency (data.google_billing_account.account.currency_code). Kept small: this is a lab, not production."
   type        = number
   default     = 20
 }
