@@ -29,6 +29,11 @@ override.tf.json
 terraform.rc
 # .terraform.lock.hcl NÃO é ignorado: deve ser versionado (garante
 # reprodutibilidade de providers entre máquinas/CI)
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+*.tfbackend
+!*.tfbackend.example
 
 # --- Segredos / variáveis de ambiente ---
 .env
