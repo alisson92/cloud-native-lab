@@ -3,12 +3,30 @@
 #
 # Docs consulted:
 # - https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/project_service
+# - https://developer.hashicorp.com/terraform/tutorials/kubernetes/gke
+# - https://docs.cloud.google.com/service-usage/docs/enabled-service
 
-# Kubernetes Engine API. A fresh GCP project has this disabled, which would
-# fail both the GKE cluster and (since the Kubernetes Engine API depends on
-# the Compute Engine API) the VPC network/subnetwork resources below.
-# Enabling container.googleapis.com transitively enables compute.googleapis.com
-# as its dependency, so a single resource here covers both modules.
+# Compute Engine API. A fresh GCP project has this disabled, which would fail
+# `google_compute_network`/`google_compute_subnetwork` in the VPC module and
+# the GKE cluster/node pool, both of which are Compute Engine-backed
+# resources under the hood. Declared explicitly and separately from
+# `container.googleapis.com` below: HashiCorp's own GKE tutorial
+# (developer.hashicorp.com/terraform/tutorials/kubernetes/gke) instructs
+# enabling both APIs before applying, and no official source confirms that
+# `google_project_service` enabling the Kubernetes Engine API transitively
+# enables the Compute Engine API as a side effect (Cloud Console's
+# ConsumerPolicy-based hierarchical enablement is a different mechanism from
+# the Service Usage API call this resource makes). Being explicit here is
+# free and removes the doubt either way.
+resource "google_project_service" "compute" {
+  project = var.project_id
+  service = "compute.googleapis.com"
+
+  disable_on_destroy = false
+}
+
+# Kubernetes Engine API. A fresh GCP project has this disabled too, which
+# would fail the GKE cluster/node pool resources.
 resource "google_project_service" "container" {
   project = var.project_id
   service = "container.googleapis.com"
@@ -22,7 +40,10 @@ module "vpc" {
   project_id = var.project_id
   region     = var.region
 
-  depends_on = [google_project_service.container]
+  depends_on = [
+    google_project_service.compute,
+    google_project_service.container,
+  ]
 }
 
 module "gke" {
@@ -42,5 +63,8 @@ module "gke" {
   min_node_count    = var.min_node_count
   max_node_count    = var.max_node_count
 
-  depends_on = [google_project_service.container]
+  depends_on = [
+    google_project_service.compute,
+    google_project_service.container,
+  ]
 }
