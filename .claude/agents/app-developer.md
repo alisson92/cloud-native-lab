@@ -42,3 +42,7 @@ following the gitops-engineer's structure), and one CI pipeline per service
 
 Commit (Conventional Commits, English), update `TASKS.md`, report back
 concisely.
+
+Before requesting review, complete the mandatory pre-review self-check
+in `docs/conventions.md` — a failed review round is the most expensive
+event in this project. Keep your TASKS.md entry within 10 lines.

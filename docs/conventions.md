@@ -78,3 +78,21 @@
   docs.
 - Architectural decisions go to `docs/adr/` using the format:
   `NNN-short-title.md` with Context / Decision / Consequences.
+
+## Pre-review self-check (mandatory before requesting review)
+
+A review round costs two full context reloads — the most expensive event in
+this project. Owners request review ONLY after every box below passes:
+
+- [ ] Formatters and validators ran clean in this session (`terraform fmt`
+      + `validate`, linters, tests as applicable) — outputs included in the
+      task notes or PR description.
+- [ ] Every non-default value and every non-obvious flag has a comment with
+      its doc-grounded reason. No invented arguments: anything not verified
+      against official docs in this session was removed or verified now.
+- [ ] Claims in the task notes match what was actually verified — no
+      "confirmed" without a fetched source.
+- [ ] English only; Conventional Commits; no secrets (grep the diff for
+      obvious patterns before committing).
+- [ ] ADR written if alternatives were weighed; TASKS.md entry is within
+      the 10-line limit.

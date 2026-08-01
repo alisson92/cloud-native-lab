@@ -38,3 +38,7 @@ Airflow DAG for the nightly sales report. All declared under `gitops/`.
 
 Commit (Conventional Commits, English), update `TASKS.md`, record decisions
 (e.g. operator vs plain deployment for Redis) as ADRs, report back concisely.
+
+Before requesting review, complete the mandatory pre-review self-check
+in `docs/conventions.md` — a failed review round is the most expensive
+event in this project. Keep your TASKS.md entry within 10 lines.
