@@ -95,3 +95,20 @@ values" rule applied to `project_id`.
   apply; this is documented inline in the file itself and in the README,
   but it is a manual step a human could get wrong. Accepted as the
   simplest option given the constraints (see alternatives above).
+
+## Addendum (2026-08-01): API enablement precedes the budget alert
+
+A fresh GCP project has `billingbudgets.googleapis.com` and
+`cloudbilling.googleapis.com` disabled, so `module.budget_alert` (which
+uses `data.google_billing_account` and creates a `google_billing_budget`)
+would fail on the very first `apply`. `terraform/bootstrap/main.tf` now
+creates `google_project_service` resources for both APIs, with
+`module.budget_alert` depending on them explicitly.
+
+Enabling an API is a free operation — Google does not bill for
+`serviceusage.googleapis.com` calls or for an API simply being enabled,
+only for its resources once created — so this does not violate the
+"budget alert first" rule in `docs/phases.md`: the budget alert remains
+the first *billable* resource, API enablement is just a non-billable
+precondition for it. The same reasoning applies to `container.googleapis.com`
+in `terraform/foundation/main.tf`.
