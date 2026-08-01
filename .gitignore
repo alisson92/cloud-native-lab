@@ -3,14 +3,14 @@
 # files (shows up on any file touched via WSL <-> Windows)
 *:Zone.Identifier
 
-# --- Editores / IDE ---
+# --- Editors / IDE ---
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# --- Sistema operacional ---
+# --- Operating system ---
 .DS_Store
 Thumbs.db
 desktop.ini
@@ -33,14 +33,14 @@ terraform.rc
 *.tfvars.json
 *.tfbackend
 
-# --- Segredos / variáveis de ambiente ---
+# --- Secrets / environment variables ---
 .env
 .env.*
 !.env.example
 *.pem
 *.key
 
-# --- Python (Airflow DAGs, automações, scripts) ---
+# --- Python (Airflow DAGs, automation, scripts) ---
 __pycache__/
 *.pyc
 .venv/
@@ -55,16 +55,16 @@ yarn-error.log*
 dist/
 build/
 
-# --- Claude Code (config local do usuário) ---
+# --- Claude Code (local user config) ---
 .claude/settings.local.json
-# Worktrees isolados criados pela tool Agent (isolation: "worktree") para
-# cada subagente — estado local de execução, nunca conteúdo do projeto
+# Isolated worktrees created by the Agent tool (isolation: "worktree") for
+# each subagent — local execution state, never project content
 .claude/worktrees/
 
-# --- Plugin "remember" (estado local de memória de sessão) ---
+# --- "remember" plugin (local session memory state) ---
 .remember/
 
-# --- Logs e temporários genéricos ---
+# --- Generic logs and temporary files ---
 *.log
 *.tmp
 *.bak
