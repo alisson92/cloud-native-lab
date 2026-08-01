@@ -53,6 +53,11 @@ This config intentionally starts on Terraform's implicit **local** backend
    in the plan's resource ordering / apply order.
 5. `terraform apply` with the same vars. This is a human-run step — no
    agent in this repository is allowed to run `apply`.
+   API activation is eventually consistent: if this `apply` fails on a
+   dependent resource with `Error 403: ... API has not been used in
+   project ... or it is disabled` right after the corresponding
+   `google_project_service` was created, this is not a config bug — wait a
+   minute and re-run `apply`.
 6. Copy `backend.gcs.tfbackend.example` to `backend.gcs.tfbackend` and set
    `bucket` to the real bucket name (the `state_bucket_name` output from
    step 5).
