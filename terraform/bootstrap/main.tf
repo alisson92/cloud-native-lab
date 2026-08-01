@@ -14,6 +14,28 @@
 # - https://developer.hashicorp.com/terraform/language/backend/gcs
 # - https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/project_service
 
+# The Cloud Resource Manager API. Required before ANY `google_project_service`
+# resource in this repository can run, not just this one: the Service Usage
+# API (which `google_project_service` calls under the hood) draws its
+# quota/permission check from the *calling identity's own project*, and on a
+# brand-new project that identity's project is this same project. If CRM has
+# never been enabled here, that check itself fails with "Cloud Resource
+# Manager API has not been used in project ... or it is disabled" -- for
+# every service, including CRM itself. This is a confirmed, unresolved
+# provider/API limitation (not something this config can route around), see
+# the addendum to docs/adr/003-terraform-bootstrap-sequence.md. Because of
+# that catch-22, this resource cannot reliably perform the *first* enablement
+# of CRM on a cold project -- see `README.md` for the required one-time
+# manual prerequisite. Declaring it here is still correct: once CRM is
+# enabled (manually, once), this resource is a no-op on every subsequent
+# `apply` and keeps the requirement self-documenting in code.
+resource "google_project_service" "cloudresourcemanager" {
+  project = var.project_id
+  service = "cloudresourcemanager.googleapis.com"
+
+  disable_on_destroy = false
+}
+
 # APIs required before the budget alert can be created. A fresh GCP project
 # has both disabled: `google_billing_budget` needs the Cloud Billing Budget
 # API, and the `google_billing_account` data source (used inside the
@@ -29,6 +51,8 @@ resource "google_project_service" "billingbudgets" {
   # project-wide side effect with no cost benefit, and re-enabling on every
   # rebuild only adds latency to the next `apply`.
   disable_on_destroy = false
+
+  depends_on = [google_project_service.cloudresourcemanager]
 }
 
 resource "google_project_service" "cloudbilling" {
@@ -36,6 +60,8 @@ resource "google_project_service" "cloudbilling" {
   service = "cloudbilling.googleapis.com"
 
   disable_on_destroy = false
+
+  depends_on = [google_project_service.cloudresourcemanager]
 }
 
 module "budget_alert" {
@@ -46,7 +72,10 @@ module "budget_alert" {
   amount             = var.budget_amount
   display_name       = "cloud-native-lab monthly budget"
 
+  # `data.google_project` (used inside the budget-alert module to resolve the
+  # numeric project number) is itself a Cloud Resource Manager API call.
   depends_on = [
+    google_project_service.cloudresourcemanager,
     google_project_service.billingbudgets,
     google_project_service.cloudbilling,
   ]

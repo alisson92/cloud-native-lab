@@ -12,6 +12,34 @@ config in this repository depends on:
 Full rationale for this ordering (and the alternatives considered) is in
 `docs/adr/003-terraform-bootstrap-sequence.md`.
 
+## Prerequisite: enable the Cloud Resource Manager API manually (one time)
+
+Before running `terraform init`/`apply` in this directory for the **first
+time ever** on a given GCP project, a human with sufficient IAM permissions
+(Owner/Editor, or `roles/serviceusage.serviceUsageAdmin`) must run:
+
+```sh
+gcloud services enable cloudresourcemanager.googleapis.com --project=<real-project-id>
+```
+
+This cannot be done by Terraform itself on a cold project. The Service Usage
+API that backs every `google_project_service` resource draws its
+quota/permission check from the *calling identity's own project* — on a
+fresh project where Terraform's identity lives in that same project, this
+means every `google_project_service` call, including one that tries to
+enable the Cloud Resource Manager API itself, fails with "Cloud Resource
+Manager API has not been used in project ... or it is disabled" until CRM is
+already enabled. `gcloud`/Cloud Console enablement (using a human's own
+credentials) does not hit this constraint and is the standard, HashiCorp- and
+Google-documented way to break the cycle. Full citations and root-cause
+detail are in the addendum to `docs/adr/003-terraform-bootstrap-sequence.md`.
+
+This is a one-time step per GCP project, not per `apply`: once CRM is
+enabled, it stays enabled (`disable_on_destroy = false` on every
+`google_project_service` resource in this repository), and this config's own
+`google_project_service.cloudresourcemanager` resource becomes a no-op that
+just keeps the requirement declared in code.
+
 ## One-time sequence (human-run; never automated, never `apply`d by an agent)
 
 This config intentionally starts on Terraform's implicit **local** backend
