@@ -1,0 +1,8 @@
+# Copy this file to backend.gcs.tfbackend (gitignored) and fill in the
+# real bucket name created by terraform/bootstrap/ (its state_bucket_name
+# output).
+#
+# terraform init -backend-config=backend.gcs.tfbackend
+
+bucket = "REPLACE_WITH_REAL_BUCKET_NAME"
+prefix = "foundation"
