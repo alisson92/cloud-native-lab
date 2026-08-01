@@ -14,6 +14,11 @@ terraform/
 
 ## Apply order
 
+0. **One-time per GCP project, before step 1**: enable the Cloud Resource
+   Manager API manually (`gcloud services enable cloudresourcemanager.googleapis.com`)
+   — Terraform cannot self-enable it on a cold project. See
+   `terraform/bootstrap/README.md`'s "Prerequisite" section before running
+   anything below.
 1. `terraform/bootstrap/` — see its `README.md` for the exact one-time
    local-state-to-GCS sequence. Creates the budget alert (must be the
    first billable resource ever created, per `docs/phases.md`) and the
