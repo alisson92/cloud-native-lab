@@ -51,6 +51,37 @@ documented, and left for the human operator to approve and run:
 Agents may freely run `terraform init`, `validate`, `plan`, `fmt`, tests,
 linters, and anything local.
 
+## Token discipline (FinOps for agents)
+
+Token cost is to agent orchestration what cloud cost is to infrastructure.
+The project must fit inside the operator's usage limits per session — a
+phase that exhausts the limit mid-work is a failed phase plan.
+
+1. **Lean board.** `TASKS.md` log entries are at most 10 lines. Details go
+   to commits, PR descriptions, and ADRs. At phase close, the orchestrator
+   archives the phase log to `docs/phase-logs/phase-<n>.md` and leaves a
+   summary of at most 5 lines on the board.
+2. **Batch delegations.** Every subagent invocation pays the fixed cost of
+   reading the shared context. Delegate related tasks as one well-defined
+   batch (e.g. "implement these three modules"), not as many small tasks.
+3. **Review once per batch.** The reviewer is invoked once per completed
+   batch, not per file or per task. A deep, source-verifying review happens
+   only at the phase gate; task-level reviews are single-pass and focused
+   (see the reviewer's own tiering rules).
+4. **Prevent review rounds.** A failed review round is the most expensive
+   event in this project: it reloads two full contexts. Owners MUST complete
+   the pre-review self-check in `docs/conventions.md` before requesting
+   review.
+5. **Model policy.** Workers and reviewer run on Sonnet. Opus is not used
+   unless the human operator explicitly asks for it on a specific decision.
+6. **Orchestrator hygiene.** Delegate by pointing at file paths — never
+   paste file contents into delegation prompts. Keep the orchestrator's own
+   context small; compact between phases.
+7. **Phase budget check.** Before starting a phase, the orchestrator
+   estimates the number of delegations and states it in the plan. If a
+   phase looks like it needs more than ~6-8 delegations, split the phase
+   across sessions at a natural boundary instead of pushing through.
+
 ## Definition of done (per task)
 
 A task is done only when: code passes validation/lint/tests, the change is

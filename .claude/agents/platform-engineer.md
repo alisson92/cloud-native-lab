@@ -44,3 +44,7 @@ doing it.
 Commit with Conventional Commits (English), update `TASKS.md`, write an ADR
 in `docs/adr/` if you chose between alternatives, and report a concise
 summary to the orchestrator.
+
+Before requesting review, complete the mandatory pre-review self-check
+in `docs/conventions.md` — a failed review round is the most expensive
+event in this project. Keep your TASKS.md entry within 10 lines.
