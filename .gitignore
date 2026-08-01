@@ -1,0 +1,64 @@
+# --- Windows/WSL artifacts ---
+# Alternate Data Stream criado pelo Windows Explorer ao baixar/copiar
+# arquivos (aparece em qualquer arquivo tocado via WSL <-> Windows)
+*:Zone.Identifier
+
+# --- Editores / IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- Sistema operacional ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Terraform ---
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+# .terraform.lock.hcl NÃO é ignorado: deve ser versionado (garante
+# reprodutibilidade de providers entre máquinas/CI)
+
+# --- Segredos / variáveis de ambiente ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Python (Airflow DAGs, automações, scripts) ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# --- Node/JS (frontend, BFF) ---
+node_modules/
+npm-debug.log*
+yarn-error.log*
+dist/
+build/
+
+# --- Claude Code (config local do usuário) ---
+.claude/settings.local.json
+
+# --- Plugin "remember" (estado local de memória de sessão) ---
+.remember/
+
+# --- Logs e temporários genéricos ---
+*.log
+*.tmp
+*.bak
