@@ -6,12 +6,12 @@
 
 ## Phase 1 — Foundation (owner: platform-engineer)
 
-- [review] (platform-engineer) Terraform backend: GCS bucket for state (bootstrapped once, documented) — `terraform/bootstrap/`. Round 2 fix complete: `google_project_service.cloudresourcemanager` added (with a documented one-time manual `gcloud services enable` prerequisite — see Log), plus round 1's `billingbudgets.googleapis.com`/`cloudbilling.googleapis.com`. See Log.
-- [review] (platform-engineer) Budget alert module — FIRST billable-adjacent resource, before everything — `terraform/modules/budget-alert/`. No changes this round; round 1 fix (`currency_code` from `data.google_billing_account.account.currency_code`, ADR path reference) still holds. See Log.
-- [done] (platform-engineer) VPC module (minimal: one subnet, secondary ranges for GKE) — `terraform/modules/vpc/`. Reviewer: APPROVED with a nit (misleading comment on `private_ip_google_access`)
-- [review] (platform-engineer) GKE module: zonal cluster, Spot node pool, sensible defaults — `terraform/modules/gke/`. No module changes this round; `terraform/foundation/main.tf` (which wires it) now has an explicit `compute.googleapis.com` resource instead of relying on an unverified transitive-enable claim. See Log.
-- [done] (reviewer) Review Phase 1 modules against official Terraform/GKE docs — verdict CHANGES REQUESTED (round 1), then CHANGES REQUESTED again (round 2, small — see notes below), fix round 2 now complete, awaiting reviewer's third pass
-- [todo] (HUMAN) Run `terraform apply` after review approval (bootstrap first, then foundation — see `terraform/README.md`). Still blocked: reviewer's third pass on round 2 fixes must land first; also note the new one-time manual prerequisite in `terraform/bootstrap/README.md` (`gcloud services enable cloudresourcemanager.googleapis.com`) before the human's first `apply`, plus `gcloud auth application-default login` + real `project_id`/`billing_account_id` to produce a real plan.
+- [done] (platform-engineer) Terraform backend: GCS bucket for state (bootstrapped once, documented) — `terraform/bootstrap/`. Reviewer APPROVED (3rd pass).
+- [done] (platform-engineer) Budget alert module — FIRST billable-adjacent resource, before everything — `terraform/modules/budget-alert/`. Reviewer APPROVED (3rd pass).
+- [done] (platform-engineer) VPC module (minimal: one subnet, secondary ranges for GKE) — `terraform/modules/vpc/`. Reviewer APPROVED (1st pass, one nit).
+- [done] (platform-engineer) GKE module: zonal cluster, Spot node pool, sensible defaults — `terraform/modules/gke/`. Reviewer APPROVED (3rd pass).
+- [done] (reviewer) Review Phase 1 modules against official Terraform/GKE docs — final verdict **APPROVED** (3rd pass) after 2 fix rounds. Phase 1 reviewer gate in `docs/phases.md` is satisfied.
+- [todo] (HUMAN) Phase 1 code is approved and merge-ready (PR #2). Before `terraform apply`, in order: (1) install `gcloud`, run `gcloud auth application-default login`; (2) one-time per GCP project: `gcloud services enable cloudresourcemanager.googleapis.com --project=<id>` (Terraform cannot self-enable this on a cold project — see `terraform/bootstrap/README.md`); (3) follow `terraform/README.md` "Apply order" — bootstrap first with real `project_id`/`billing_account_id`/`state_bucket_name`, migrate state to GCS, then `foundation`; (4) attach the real `plan` output before running `apply`. Merging PR #2 into `main` is also a human action — orchestrator/agents never merge.
 
 ## Phase 2 — Delivery (owner: gitops-engineer)
 
@@ -215,3 +215,35 @@
   ADR-003 round-2 addendum, `compute.googleapis.com` should-fix), plus this
   task-board update. Flipping the four Phase 1 code tasks back to `review`
   for the reviewer's third pass.
+- (reviewer) Third and final review of PR #2. Verdict: **APPROVED**.
+  Independently re-ran every mechanical check (`fmt -check`, `init
+  -backend=false` + `validate` on both root modules, `plan` attempts) —
+  all clean, failure mode still purely credential/environmental, no new
+  config bugs. Re-verified round 2's blocker fix from source rather than
+  from the report: pulled issues #6101/#11435 directly via `gh api` and
+  confirmed the maintainer quote in ADR-003 is accurate; pulled Google's
+  "Enabled services" doc and confirmed `cloudresourcemanager`, `compute`,
+  `container`, `billingbudgets`, `cloudbilling` are all genuinely absent
+  from the default-enabled list (while `storage.googleapis.com` — why the
+  state bucket needs no API resource — is present). Confirmed
+  `terraform/bootstrap/README.md`'s prerequisite section is clear and the
+  ADR-003 addendum honestly describes the step as manual rather than
+  claiming full automation. Re-verified the should-fix (`compute`
+  explicitly enabled, transitive claim removed and replaced with the
+  HashiCorp tutorial citation, verified verbatim) and did a full regression
+  sweep on all round-1 fixes — nothing regressed.
+  Five non-blocking nits raised, none requiring another round; orchestrator
+  applied the two with real operator value directly: (1) a note in
+  `terraform/bootstrap/README.md` that a 403 on the first `apply` right
+  after enabling an API is eventual-consistency, not a config bug — retry;
+  (2) a cross-reference to the CRM prerequisite added as step 0 in
+  `terraform/README.md`'s "Apply order" so a reader starting there doesn't
+  hit the failure blind. Also fixed an inaccurate premise in ADR-003 (it
+  referred to "the Terraform service account" as an established fact; no
+  service account exists in this repo — the documented auth path is human
+  ADC, corrected in place). The other nits (an incomplete "alternatives
+  considered" list in ADR-003, and an already-resolved `disable_on_destroy`/
+  `deletion_policy` question) were left as-is — optional polish, not worth
+  another agent round.
+  **Phase 1's reviewer gate in `docs/phases.md` is satisfied.** Remaining
+  work is entirely the `[todo] (HUMAN)` item above.
