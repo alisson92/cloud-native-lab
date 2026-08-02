@@ -8,8 +8,8 @@
 # Namespace "apps" already created by gitops/services/backend/namespace.yaml
 # — see that file's comment and gitops/services/README.md.
 #
-# image tag: "latest-dev" — same placeholder-pending-first-CI-push reason
-# as gitops/services/backend/deployment.yaml; see that file's comment.
+# image tag: pinned to the github.sha of the main commit whose CI push
+# job actually ran end-to-end (PR #16 merge). See that file's comment.
 #
 # BFF_URL: plain env var, same reasoning as gitops/services/bff/
 # deployment.yaml's BACKEND_URL comment.
@@ -42,7 +42,7 @@ spec:
         runAsGroup: 1000
       containers:
         - name: frontend
-          image: ghcr.io/alisson92/frontend:latest-dev
+          image: ghcr.io/alisson92/frontend:ed1a6ca9210717a06bc79ebe83bce8ea8e93cbf6
           ports:
             - containerPort: 8082
               name: http
