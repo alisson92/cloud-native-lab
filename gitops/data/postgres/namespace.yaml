@@ -1,0 +1,15 @@
+# Namespace for the Postgres workload (Phase 4, docs/phases.md).
+# Separate from `cnpg-system` (the operator's namespace, gitops/apps/
+# cloudnativepg-operator.yaml) since this holds the namespaced Cluster CR
+# and its Vault-sourced credentials, not the cluster-wide operator.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: postgres
+  annotations:
+    # Sync wave "1": applied after cloudnativepg-operator and
+    # external-secrets Applications (wave "0") so both the postgresql.cnpg.io
+    # CRDs and ESO's CRDs already exist when secretstore.yaml/
+    # externalsecret.yaml in this directory sync.
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "1"

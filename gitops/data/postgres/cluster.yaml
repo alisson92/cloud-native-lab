@@ -1,0 +1,70 @@
+# CloudNativePG Cluster: single-instance PostgreSQL for the "orders"
+# transactional store (docs/vision.md: "PostgreSQL | Transactional store
+# for orders"). See docs/adr/008-postgres-operator-proportionality.md for
+# why the operator (not a hand-rolled StatefulSet) was kept for this lab.
+#
+# instances: 1 — no HA (docs/vision.md non-goal: "High availability and
+# multi-region setups"); this is an ephemeral lab (ADR-004), not a
+# durability guarantee.
+#
+# storage.size: 1Gi — small, cost-disciplined default for a lab dataset;
+# no storageClassName set, so the cluster's default StorageClass is used
+# (Kind's local-path-provisioner), matching docs/conventions.md's
+# preference for defaults over custom tuning without a measured reason.
+#
+# resources: requests/limits mandatory per docs/conventions.md. Sized for a
+# single-instance lab Postgres with light, non-production traffic.
+#
+# bootstrap.initdb.owner MUST match the "username" value written to Vault
+# at "secret/postgres" by the one-time bootstrap in README.md (documented
+# there as "orders") — CloudNativePG requires this match to apply the
+# secret's password to that owner. secret.name references the Kubernetes
+# Secret produced by externalsecret.yaml (type kubernetes.io/basic-auth,
+# required by this bootstrap method).
+#
+# Docs consulted:
+# - https://cloudnative-pg.io/documentation/current/bootstrap/
+#   (bootstrap.initdb: database/owner/secret.name; secret must be
+#   kubernetes.io/basic-auth with the owner's username matching)
+# - https://cloudnative-pg.io/documentation/current/cloudnative-pg.v1/
+#   (spec.instances, spec.storage.size, spec.resources use core/v1
+#   ResourceRequirements)
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+  namespace: postgres
+  annotations:
+    # Sync wave "2": after the operator/CRDs (wave "0") and the
+    # ExternalSecret-produced credentials Secret (wave "1") this Cluster's
+    # bootstrap depends on.
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "2"
+    # SkipDryRunOnMissingResource: same first-ever-sync CRD-then-CR ordering
+    # problem documented in gitops/secrets-demo/secretstore.yaml — on a
+    # fresh cluster, Argo CD dry-run-validates every resource in the sync
+    # operation up front, before wave "0" (which installs the
+    # postgresql.cnpg.io CRDs) has actually run.
+    # Docs: https://argo-cd.readthedocs.io/en/stable/user-guide/sync-options/
+    # (section: "Skip Dry Run for new custom resources types")
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  instances: 1
+
+  storage:
+    size: 1Gi
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  bootstrap:
+    initdb:
+      database: orders
+      owner: orders
+      secret:
+        name: postgres-app-credentials

@@ -1,0 +1,94 @@
+# Redis: plain Deployment (not an operator) as catalog cache/sessions
+# (docs/vision.md). See docs/adr/007-redis-plain-deployment.md for the
+# operator-vs-Deployment trade-off.
+#
+# image: redis:8.10.0-alpine — pinned patch version (never `latest`, per
+# CLAUDE.md's mandatory alert triggers), Alpine variant to keep the image
+# small; confirmed as a currently published tag on Docker Hub's official
+# `redis` image (hub.docker.com/_/redis) in this session.
+#
+# No PersistentVolumeClaim: Redis's role here is a cache/session store, not
+# a durable one (docs/vision.md: "Redis | Catalog cache and sessions"), and
+# the cluster itself is ephemeral Kind (docs/adr/004). Redis's own official
+# Docker guidance (redis.io "Run Redis Open Source on Docker") treats
+# persistence as an opt-in volume mount, not a default — the image's `/data`
+# directory is plain container filesystem unless a volume is explicitly
+# mounted. Losing the cache on a pod restart is an accepted trade-off for a
+# cache role in an ephemeral lab; see the ADR for the full reasoning.
+#
+# --requirepass via `args` + `$(REDIS_PASSWORD)`: Kubernetes substitutes
+# `$(VAR_NAME)` references inside a container's `command`/`args` using that
+# container's own env vars (no shell needed) — documented Kubernetes
+# behavior, https://kubernetes.io/docs/tasks/inject-data-application/define-command-argument-container/#running-a-command-in-a-shell
+# The image's own entrypoint (redis/docker-library-redis docker-entrypoint.sh)
+# prepends `redis-server` when the first arg starts with `-`.
+#
+# securityContext.runAsUser/runAsGroup: 999 — the `redis` user/group baked
+# into the official image (confirmed via the image's Dockerfile.template:
+# `useradd -r -g redis -u 999 redis`, `/data` chowned to redis:redis). The
+# image has no default USER instruction (it uses gosu to step down from
+# root only when started as uid 0), so `runAsNonRoot: true` alone would
+# fail without this explicit uid/gid.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: redis
+  annotations:
+    # Sync wave "2": consumes the "redis-credentials" Secret produced by
+    # externalsecret.yaml (wave "1").
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+      containers:
+        - name: redis
+          image: redis:8.10.0-alpine
+          args:
+            - --requirepass
+            - $(REDIS_PASSWORD)
+          ports:
+            - containerPort: 6379
+              name: redis
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-credentials
+                  key: REDIS_PASSWORD
+          # exec probe: readinessProbe fields don't support Kubernetes'
+          # $(VAR_NAME) container-command substitution, so REDIS_PASSWORD is
+          # read via the actual shell env instead (kubelet's exec probe
+          # inherits the container's environment).
+          # -a: redis-cli's documented flag to authenticate against a
+          # server protected by requirepass/AUTH.
+          # https://redis.io/docs/latest/develop/tools/cli/ (redis-cli
+          # command-line options: -a <password>)
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - redis-cli -a "$REDIS_PASSWORD" ping | grep -q PONG
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # Requests/limits mandatory per docs/conventions.md. Sized for a
+          # small lab cache dataset with light traffic, not production load.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

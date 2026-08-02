@@ -1,0 +1,69 @@
+# CloudNativePG operator, via the official Helm chart
+# (Phase 4, docs/architecture.md "Data" layer: "PostgreSQL via CloudNativePG
+# operator"). See docs/adr/008-postgres-operator-proportionality.md for why
+# the operator (not a hand-rolled StatefulSet) was kept for this lab.
+#
+# The operator itself is cluster-scoped infrastructure (installs the
+# `postgresql.cnpg.io` CRDs and a controller watching all namespaces by
+# default), so it lives in `gitops/apps/` next to `vault.yaml`/
+# `external-secrets.yaml`, not under `gitops/data/postgres/` (which holds
+# the actual Cluster CR — a namespaced workload).
+#
+# Docs consulted:
+# - https://cloudnative-pg.io/documentation/current/installation_upgrade/
+#   (Helm chart install: `helm repo add cnpg https://cloudnative-pg.github.io/charts`)
+# - https://argo-cd.readthedocs.io/en/stable/user-guide/helm/
+#   (Helm chart repository as an Application source)
+# - Chart version 0.29.0 (operator app version 1.30.0) confirmed live via
+#   `helm search repo cnpg/cloudnative-pg --versions` against
+#   https://cloudnative-pg.github.io/charts (official chart repo).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cloudnativepg-operator
+  namespace: argocd
+  annotations:
+    # Sync wave "0": under root-app's recursive sync of gitops/apps/*, the
+    # operator (and its CRDs) must exist before gitops/data/postgres/'s
+    # Cluster CR (wave "2") is applied.
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+
+  source:
+    repoURL: https://cloudnative-pg.github.io/charts
+    chart: cloudnative-pg
+    targetRevision: 0.29.0
+    helm:
+      valuesObject:
+        # Requests/limits mandatory per docs/conventions.md. The operator
+        # controller is a single low-traffic reconciler for one Cluster CR
+        # in this lab, sized well below the chart's own default requests
+        # (100m/128Mi) since there is no meaningful reconcile load here.
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cnpg-system
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # The postgresql.cnpg.io CRDs (Cluster, Pooler, ...) embed large
+      # OpenAPI schemas, the same class of issue documented in
+      # gitops/apps/external-secrets.yaml for ESO's CRDs: client-side
+      # apply's last-applied-configuration annotation can exceed the
+      # 256KiB Kubernetes annotation limit. Server-Side Apply avoids this
+      # by tracking field ownership server-side instead.
+      # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-options/#server-side-apply
+      - ServerSideApply=true
