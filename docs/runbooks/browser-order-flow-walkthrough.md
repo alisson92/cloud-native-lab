@@ -177,6 +177,15 @@ kubectl -n postgres exec -i postgres-1 -- \
   sh -c "PGPASSWORD='$PG_PASSWORD' psql -h 127.0.0.1 -U orders -d orders -c 'SELECT * FROM orders ORDER BY id DESC LIMIT 1;'"
 ```
 
+> ⏱️ **Timing matters here:** the backend caches the catalog in Redis with
+> a 60-second TTL (`apps/backend/src/catalog.js`, `CACHE_TTL_SECONDS`). If
+> more than 60s passed since your last catalog request (step 4's page
+> load, or step 5's order confirmation, which re-fetches it), the key
+> will have expired and `GET` returns nothing — that's the cache working
+> as designed, not a failure. Reload the storefront page (or `curl -s
+> http://localhost:8082/api/catalog > /dev/null`) right before running
+> this command to guarantee a hit.
+
 ```bash
 # Confirms the catalog is cached in Redis (real cache-aside, not a
 # pass-through)
@@ -227,6 +236,7 @@ don't need to be reverted (lab data, ephemeral environment by design —
 | Browser page loads but the catalog is empty or shows a generic error | Backend couldn't read its credentials or can't reach Postgres/Redis | Test directly: `kubectl -n apps exec deploy/backend -- wget -qO- http://localhost:8080/health`. If that fails, check step 2 (ExternalSecret) before anything else. |
 | `kubectl port-forward` refuses the connection or drops on its own | Port 8082 already in use locally, or the frontend pod restarted mid-tunnel | Check for another active `port-forward` (`lsof -i :8082` or similar) and stop it; redo step 3. |
 | `root-app` stuck `OutOfSync`/`Degraded` | Some resource elsewhere in the `gitops/` tree (not necessarily Phase 5) is blocking the sync wave — Argo CD applies the whole tree as one operation | Check controller logs: `kubectl -n argocd logs -l app.kubernetes.io/name=argocd-application-controller --tail=100`. Look for a `SecretStore`/`ExternalSecret` error in any namespace, not just `apps`. |
+| `redis-cli GET catalog:items` returns nothing (empty reply, no error) | The cache key's 60s TTL expired since the last catalog request — this is expected cache-aside behavior, not a bug | Re-trigger a catalog fetch (reload the storefront page, or `curl -s http://localhost:8082/api/catalog`) and immediately re-run the `GET`. `TTL catalog:items` returning `-2` confirms the key doesn't currently exist. |
 
 ---
 
