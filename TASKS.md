@@ -28,22 +28,23 @@
   verified the exit gate on Kind: `root-app` `Synced`/`Healthy`. Full log:
   `docs/phase-logs/phase-2.md`. Key decision: ADR-005.
 
-## Phase 3 — Secrets (owner: security-engineer) — CODE DONE
+## Phase 3 — Secrets (owner: security-engineer) — DONE
 
-- Summary: Vault (dev-mode) + ESO via GitOps (`gitops/apps/vault.yaml`,
-  `gitops/apps/external-secrets.yaml`). Vault<->ESO wiring in
-  `gitops/secrets-demo/`. ADR-006: dev-mode + Kubernetes-auth trade-offs.
-  PR #6 + #7 merged. 2nd live bug: `SecretStore`/`ClusterSecretStore` CRDs
-  too large for client-side apply's annotation (>262144 bytes) — fixed with
-  `ServerSideApply=true` app-wide on `external-secrets` Application (docs:
-  argo-cd sync-options page), branch `phase-3/fix-crd-server-side-apply`,
-  PR #8 (open).
-- [todo] (HUMAN) Merge PR #8, then run `gitops/secrets-demo/README.md`'s
-  Vault bootstrap and exit-gate verification.
+- Summary: Vault (dev-mode) + ESO via GitOps, Vault->ESO->pod flow in
+  `gitops/secrets-demo/`. Reviewer APPROVED PR #6 (1 pass, 1 fix round).
+  Two live-only bugs found and fixed post-merge (PRs #7, #8; see
+  `docs/phase-logs/phase-3.md`). Human verified the exit gate on Kind:
+  `secret-consumer` pod env reflects the Vault-stored value. Key
+  decision: ADR-006.
 
-## Phases 4–7
+## Phase 4 — Data (owner: data-engineer)
 
-- [todo] To be broken down by the orchestrator when Phase 3 gate passes.
+- [todo] To be planned by the orchestrator. Definition in `docs/phases.md`:
+  CloudNativePG cluster + Redis via GitOps; credentials from Vault.
+
+## Phases 5–7
+
+- [todo] To be broken down by the orchestrator when Phase 4 gate passes.
   Definitions live in `docs/phases.md`.
 
 ## Decisions pending (need ADR)
@@ -58,3 +59,5 @@
   board slimmed per the token-discipline rules added to `CLAUDE.md`.
 - (orchestrator) Phase 2 log archived to `docs/phase-logs/phase-2.md`;
   exit gate confirmed by human on Kind (`root-app` `Synced`/`Healthy`).
+- (orchestrator) Phase 3 log archived to `docs/phase-logs/phase-3.md`;
+  exit gate confirmed by human on Kind (secret flowed Vault->ESO->pod).
