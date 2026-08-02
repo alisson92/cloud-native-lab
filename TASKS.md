@@ -33,13 +33,13 @@
 - Summary: Vault (dev-mode) + ESO via GitOps (`gitops/apps/vault.yaml`,
   `gitops/apps/external-secrets.yaml`). Vault<->ESO wiring in
   `gitops/secrets-demo/`. ADR-006: dev-mode + Kubernetes-auth trade-offs.
-  PR #6. Live bug found post-merge: `root-app` dry-run pre-flight failed on
-  ESO CRs before their CRDs existed, aborting wave "0" too — fixed with
-  `SkipDryRunOnMissingResource=true` on the CR annotations (docs: argo-cd
-  sync-options page), branch `phase-3/fix-sync-dry-run`, PR #7 (open).
-- [todo] (HUMAN) Merge PR #6 + PR #7 (in that order or as a rebase), then
-  run `gitops/secrets-demo/README.md`'s Vault bootstrap and exit-gate
-  verification (human gate: merge + kubectl writes outside agent scope).
+  PR #6 + #7 merged. 2nd live bug: `SecretStore`/`ClusterSecretStore` CRDs
+  too large for client-side apply's annotation (>262144 bytes) — fixed with
+  `ServerSideApply=true` app-wide on `external-secrets` Application (docs:
+  argo-cd sync-options page), branch `phase-3/fix-crd-server-side-apply`,
+  PR #8 (open).
+- [todo] (HUMAN) Merge PR #8, then run `gitops/secrets-demo/README.md`'s
+  Vault bootstrap and exit-gate verification.
 
 ## Phases 4–7
 
