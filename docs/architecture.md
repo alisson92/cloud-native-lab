@@ -32,8 +32,12 @@ Argo CD ──reconcile──> everything under gitops/
 ## Repository layout
 
 ```
-terraform/          # Foundation + bootstrap (modules kept minimal)
-gitops/             # Everything Argo CD reconciles (app-of-apps root here)
+local/
+  kind/             # Local Kind cluster config (not Terraform-managed; see docs/adr/004)
+terraform/          # Foundation + bootstrap + delivery (modules kept minimal)
+gitops/             # Everything Argo CD reconciles
+  root-app.yaml     # App-of-apps root Application (watches gitops/ recursively)
+  apps/             # Per-service Application manifests (from Phase 3 onward)
 apps/
   backend/
   bff/

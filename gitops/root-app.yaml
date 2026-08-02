@@ -1,0 +1,52 @@
+# Root Argo CD Application: app-of-apps entrypoint (docs/architecture.md,
+# "Delivery" layer). This Application watches this same directory
+# (`gitops/`) recursively, so every plain Application manifest placed under
+# `gitops/apps/` (Phase 3 onward) is discovered and reconciled without
+# editing this file again.
+#
+# Layout choice: a directory source with `directory.recurse: true`, not a
+# Helm-chart-templated app-of-apps. The official Argo CD "Cluster
+# Bootstrapping" guide's own worked example wraps child Application
+# manifests in a Helm chart (a `templates/` dir + Chart.yaml), but
+# `spec.source.directory.recurse` is itself part of the documented
+# Application source spec (Directory source type). A Helm chart adds
+# templating machinery this lab does not need for a handful of plain
+# manifests — docs/conventions.md: "prefer plain manifests over a Helm
+# chart when templating adds nothing". This also matches the layout already
+# decided in docs/architecture.md ("one root Application pointing at
+# gitops/").
+#
+# Docs consulted:
+# - https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/
+#   (app-of-apps pattern, automated sync with pruning)
+# - https://argo-cd.readthedocs.io/en/stable/user-guide/application-specification/
+#   (source.directory.recurse)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root-app
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    # This repository's own URL/branch — no Kind- or GKE-specific value
+    # here, per docs/adr/004-local-first-validation-with-kind.md (the same
+    # gitops/ content reconciles identically on any target cluster).
+    repoURL: https://github.com/alisson92/cloud-native-lab.git
+    targetRevision: main
+    path: gitops
+    directory:
+      recurse: true
+
+  destination:
+    # The local cluster Argo CD itself runs on — true for Kind now and for
+    # GKE later, since Argo CD is always installed into the cluster it
+    # manages.
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
