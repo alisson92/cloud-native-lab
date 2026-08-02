@@ -37,10 +37,17 @@
   `secret-consumer` pod env reflects the Vault-stored value. Key
   decision: ADR-006.
 
-## Phase 4 — Data (owner: data-engineer)
+## Phase 4 — Data (owner: data-engineer) — CODE DONE, PENDING REVIEW
 
-- [todo] To be planned by the orchestrator. Definition in `docs/phases.md`:
-  CloudNativePG cluster + Redis via GitOps; credentials from Vault.
+- Summary: CloudNativePG operator + single-instance `Cluster` (`gitops/
+  data/postgres/`) and a plain Redis Deployment (`gitops/data/redis/`),
+  both credentialed from Vault via ESO (same Kubernetes-auth pattern as
+  Phase 3). Branch `phase-4/data-services`, PR open, not merged (human
+  gate). Key decisions: ADR-007 (Redis: plain Deployment), ADR-008
+  (Postgres: CloudNativePG operator kept, weighed against a StatefulSet).
+- [todo] (HUMAN) Merge PR, run the manual Vault bootstraps in
+  `gitops/data/postgres/README.md` and `gitops/data/redis/README.md`,
+  verify the exit gate on Kind (both reachable in-cluster).
 
 ## Phases 5–7
 
@@ -50,8 +57,6 @@
 ## Decisions pending (need ADR)
 
 - [todo] Helm chart vs plain manifests per application service
-- [todo] Redis deployment approach (operator vs simple deployment) — justify
-  with simplicity principle
 
 ## Log
 
