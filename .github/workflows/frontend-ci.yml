@@ -1,0 +1,15 @@
+name: frontend-ci
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/frontend/**"]
+  pull_request:
+    paths: ["apps/frontend/**"]
+
+jobs:
+  ci:
+    uses: ./.github/workflows/service-ci.yml
+    with:
+      service: frontend
+      path: apps/frontend
