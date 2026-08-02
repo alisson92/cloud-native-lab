@@ -49,23 +49,22 @@
   decisions: ADR-007 (Redis: plain Deployment), ADR-008 (Postgres:
   CloudNativePG kept).
 
-## Phase 5 — Applications (owner: app-developer) — CODE DONE
+## Phase 5 — Applications (owner: app-developer) — DONE
 
-- Summary: batch 1 (PR #14, `phase-5/app-services`) — backend/BFF/frontend/
-  worker app code, Dockerfiles, and one reusable CI pipeline per service
-  (build->test->scan->push). Batch 2 (this PR, `phase-5/gitops-services`) —
-  `gitops/services/{backend,bff,frontend,worker}/` plain manifests, Vault
-  wiring (backend only), ADR-009, doc corrections
-  (`docs/architecture.md`, `gitops/apps/README.md`).
-- [todo] (HUMAN) Merge both PRs, run backend's Vault bootstrap
-  (`gitops/services/backend/README.md`), replace the `latest-dev`
-  placeholder image tags once CI pushes real tags from `main`, then verify
-  the exit gate on Kind: order placed end-to-end via
-  `gitops/services/README.md`'s port-forward steps.
+- Summary: backend/BFF/frontend/worker (PRs #14, #15) + 4 live-only CI/
+  GitOps fixes (PRs #16, #17; see `docs/phase-logs/phase-5.md`) + a Vault
+  dev-mode state loss that had silently broken Phase 3/4's secret flow too,
+  fixed by re-bootstrapping all 4 Kubernetes-auth roles. Human verified the
+  exit gate on Kind: order placed end-to-end (frontend->BFF->backend,
+  Postgres row written, Redis cache-aside hit). Key decision: ADR-009.
 
-## Phases 6–7
+## Phase 6 — Messaging (owner: data-engineer)
 
-- [todo] To be broken down by the orchestrator when Phase 5 gate passes.
+- [todo] To be broken down by the orchestrator. Definitions in `docs/phases.md`.
+
+## Phase 7 — Operations
+
+- [todo] To be broken down by the orchestrator when Phase 6 gate passes.
   Definitions live in `docs/phases.md`.
 
 ## Log
@@ -90,3 +89,10 @@
   `redis-cli` both authenticated with Vault-sourced credentials). One
   live-only ExternalSecret/Argo-CD-sync race diagnosed and fixed post-merge
   (see phase log).
+- (orchestrator) Phase 5 log archived to `docs/phase-logs/phase-5.md`; 7
+  live-only bugs found and fixed post-merge (CI permissions, invalid Trivy
+  tag, Node 22 `--test` regression, Trivy false positives on npm's own
+  bundled deps, private GHCR packages, placeholder image tags, and a Vault
+  dev-mode state loss that had also silently broken Phase 3/4). Exit gate
+  confirmed live on Kind: order placed end-to-end, Postgres write + Redis
+  cache-aside hit both verified.
