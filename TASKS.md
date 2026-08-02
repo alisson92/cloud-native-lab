@@ -61,3 +61,6 @@
   exit gate confirmed by human on Kind (`root-app` `Synced`/`Healthy`).
 - (orchestrator) Phase 3 log archived to `docs/phase-logs/phase-3.md`;
   exit gate confirmed by human on Kind (secret flowed Vault->ESO->pod).
+- (security-engineer) Added gitleaks pre-commit hook (v8.30.1), doc note in
+  `docs/conventions.md`. Verified clean on repo, blocks synthetic secret.
+  PR opened from `phase-4/gitleaks-precommit`, not phase-gating.
