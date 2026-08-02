@@ -31,16 +31,14 @@
 ## Phase 3 — Secrets (owner: security-engineer) — CODE DONE
 
 - Summary: Vault (dev-mode) + ESO via GitOps (`gitops/apps/vault.yaml`,
-  `gitops/apps/external-secrets.yaml`, official Helm charts). Vault<->ESO
-  wiring (`SecretStore`, Kubernetes-auth, `ExternalSecret`, test pod) as
-  plain manifests in `gitops/secrets-demo/`. ADR-006 records the dev-mode
-  trade-off and the Kubernetes-auth-over-static-token choice. `helm
-  template` clean for both charts; yamllint clean; no secret values in any
-  file (grepped diff).
-- [todo] (HUMAN) Merge PR #6, then follow `gitops/secrets-demo/README.md`'s
-  one-time Vault bootstrap and exit-gate verification (blocked for agents:
-  merge is a human gate, and `kubectl apply`/`exec`-driven Vault config
-  writes are outside this agent's permitted read-only kubectl scope).
+  `gitops/apps/external-secrets.yaml`). Vault<->ESO wiring (`SecretStore`,
+  Kubernetes-auth, `ExternalSecret`, test pod) in `gitops/secrets-demo/`.
+  ADR-006: dev-mode trade-off + Kubernetes-auth-over-static-token. Sync-wave
+  ordering (0=vault/eso, 1=secrets-demo) added per reviewer follow-up. `helm
+  template`/yamllint clean; no secret values in any file. PR #6.
+- [todo] (HUMAN) Merge PR #6, then run `gitops/secrets-demo/README.md`'s
+  one-time Vault bootstrap and exit-gate verification (human gate: merge +
+  kubectl writes outside agent's read-only scope).
 
 ## Phases 4–7
 

@@ -18,6 +18,11 @@ kind: Deployment
 metadata:
   name: secret-consumer
   namespace: secrets-demo
+  annotations:
+    # Sync wave "1": consumes the "test-secret" Kubernetes Secret produced
+    # by externalsecret.yaml, which itself needs ESO's CRDs (wave "0"). See
+    # namespace.yaml in this directory for the full rationale.
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   replicas: 1
   selector:
@@ -31,6 +36,13 @@ spec:
       containers:
         - name: secret-consumer
           image: busybox:1.37
+          # busybox's default image user is root (UID 0); runAsNonRoot alone
+          # would fail container creation (kubelet validates the resolved
+          # UID against the image), so an explicit non-root runAsUser is
+          # also required. The command below needs no root privileges.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
           command:
             - sh
             - -c

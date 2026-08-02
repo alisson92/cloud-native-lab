@@ -37,6 +37,14 @@ kind: Application
 metadata:
   name: vault
   namespace: argocd
+  annotations:
+    # Sync wave "0": under root-app's recursive sync of gitops/apps/*, this
+    # Application (and its Vault Helm release, incl. CRDs where applicable)
+    # must exist before gitops/secrets-demo/ resources (wave "1") that
+    # reference the `vault` Service. Waves run lowest-first, each wave
+    # waiting for the previous one's resources to be healthy.
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   project: default
 
