@@ -28,9 +28,21 @@
   verified the exit gate on Kind: `root-app` `Synced`/`Healthy`. Full log:
   `docs/phase-logs/phase-2.md`. Key decision: ADR-005.
 
-## Phases 3–7
+## Phase 3 — Secrets (owner: security-engineer) — CODE DONE
 
-- [todo] To be broken down by the orchestrator when Phase 2 gate passes.
+- Summary: Vault (dev-mode) + ESO via GitOps (`gitops/apps/vault.yaml`,
+  `gitops/apps/external-secrets.yaml`). Vault<->ESO wiring (`SecretStore`,
+  Kubernetes-auth, `ExternalSecret`, test pod) in `gitops/secrets-demo/`.
+  ADR-006: dev-mode trade-off + Kubernetes-auth-over-static-token. Sync-wave
+  ordering (0=vault/eso, 1=secrets-demo) added per reviewer follow-up. `helm
+  template`/yamllint clean; no secret values in any file. PR #6.
+- [todo] (HUMAN) Merge PR #6, then run `gitops/secrets-demo/README.md`'s
+  one-time Vault bootstrap and exit-gate verification (human gate: merge +
+  kubectl writes outside agent's read-only scope).
+
+## Phases 4–7
+
+- [todo] To be broken down by the orchestrator when Phase 3 gate passes.
   Definitions live in `docs/phases.md`.
 
 ## Decisions pending (need ADR)

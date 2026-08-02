@@ -1,0 +1,14 @@
+# Namespace for the Phase 3 exit-gate proof: a test secret flowing
+# Vault -> External Secrets Operator -> a pod's environment variable.
+# Kept separate from `vault` and `external-secrets` (the operator
+# namespaces) since this is workload-side, not infra-side.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: secrets-demo
+  annotations:
+    # Sync wave "1": applied after the vault and external-secrets
+    # Applications (wave "0") so ESO's CRDs already exist when
+    # secretstore.yaml/externalsecret.yaml in this directory sync.
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "1"
