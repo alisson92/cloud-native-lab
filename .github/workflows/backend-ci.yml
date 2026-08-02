@@ -1,0 +1,15 @@
+name: backend-ci
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/backend/**"]
+  pull_request:
+    paths: ["apps/backend/**"]
+
+jobs:
+  ci:
+    uses: ./.github/workflows/service-ci.yml
+    with:
+      service: backend
+      path: apps/backend

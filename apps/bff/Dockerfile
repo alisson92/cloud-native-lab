@@ -1,0 +1,24 @@
+# Multi-stage build per https://docs.docker.com/build/building/multi-stage/:
+# the "build" stage installs dependencies, the "runtime" stage copies only
+# what's needed to run, keeping the final image small and dependency-free of
+# npm/build tooling.
+FROM node:22.23.2-alpine3.24 AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+COPY src ./src
+
+FROM node:22.23.2-alpine3.24 AS runtime
+WORKDIR /app
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/src ./src
+
+# Run as the "node" user pre-created by the official image rather than root,
+# per https://github.com/nodejs/docker-node/blob/main/docs/BestPractices.md
+# ("Non-root user"). No custom uid/gid needed.
+USER node
+
+EXPOSE 8081
+
+CMD ["node", "src/index.js"]

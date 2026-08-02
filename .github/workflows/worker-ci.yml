@@ -1,0 +1,15 @@
+name: worker-ci
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/worker/**"]
+  pull_request:
+    paths: ["apps/worker/**"]
+
+jobs:
+  ci:
+    uses: ./.github/workflows/service-ci.yml
+    with:
+      service: worker
+      path: apps/worker
