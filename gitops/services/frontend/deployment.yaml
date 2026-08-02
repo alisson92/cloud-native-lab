@@ -1,0 +1,75 @@
+# Frontend: storefront UI (docs/vision.md "Frontend | Storefront UI"),
+# source at apps/frontend/ (Phase 5, PR #14). Serves the static page and
+# proxies /api/* calls to the BFF server-side (apps/frontend/src/index.js) —
+# the browser never talks to the BFF directly. No Postgres/Redis/Vault
+# credentials needed, hence no SecretStore/ExternalSecret/ServiceAccount in
+# this directory (see gitops/services/README.md).
+#
+# Namespace "apps" already created by gitops/services/backend/namespace.yaml
+# — see that file's comment and gitops/services/README.md.
+#
+# image tag: "latest-dev" — same placeholder-pending-first-CI-push reason
+# as gitops/services/backend/deployment.yaml; see that file's comment.
+#
+# BFF_URL: plain env var, same reasoning as gitops/services/bff/
+# deployment.yaml's BACKEND_URL comment.
+#
+# securityContext.runAsUser/runAsGroup: 1000 — same official node image
+# "node" user, see gitops/services/backend/deployment.yaml's comment for the
+# doc-grounded uid/gid confirmation.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: apps
+  annotations:
+    # Sync wave "2": after the "apps" Namespace (wave "1"); grouped with
+    # backend/bff which also land in wave "2".
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: frontend
+          image: ghcr.io/alisson92/frontend:latest-dev
+          ports:
+            - containerPort: 8082
+              name: http
+          env:
+            - name: PORT
+              value: "8082"
+            - name: BFF_URL
+              value: "http://bff.apps.svc.cluster.local:8081"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          # Requests/limits mandatory per docs/conventions.md. Same shape as
+          # bff: a thin Express server serving a static page and proxying
+          # API calls, no DB/cache connection pool.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

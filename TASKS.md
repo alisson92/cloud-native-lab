@@ -49,14 +49,24 @@
   decisions: ADR-007 (Redis: plain Deployment), ADR-008 (Postgres:
   CloudNativePG kept).
 
-## Phases 5–7
+## Phase 5 — Applications (owner: app-developer) — CODE DONE
 
-- [todo] To be broken down by the orchestrator when Phase 4 gate passes.
+- Summary: batch 1 (PR #14, `phase-5/app-services`) — backend/BFF/frontend/
+  worker app code, Dockerfiles, and one reusable CI pipeline per service
+  (build->test->scan->push). Batch 2 (this PR, `phase-5/gitops-services`) —
+  `gitops/services/{backend,bff,frontend,worker}/` plain manifests, Vault
+  wiring (backend only), ADR-009, doc corrections
+  (`docs/architecture.md`, `gitops/apps/README.md`).
+- [todo] (HUMAN) Merge both PRs, run backend's Vault bootstrap
+  (`gitops/services/backend/README.md`), replace the `latest-dev`
+  placeholder image tags once CI pushes real tags from `main`, then verify
+  the exit gate on Kind: order placed end-to-end via
+  `gitops/services/README.md`'s port-forward steps.
+
+## Phases 6–7
+
+- [todo] To be broken down by the orchestrator when Phase 5 gate passes.
   Definitions live in `docs/phases.md`.
-
-## Decisions pending (need ADR)
-
-- [todo] Helm chart vs plain manifests per application service
 
 ## Log
 

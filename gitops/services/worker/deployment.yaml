@@ -1,0 +1,67 @@
+# Worker: Phase 6 (docs/phases.md) replaces this heartbeat loop with a
+# RabbitMQ consumer; no Service exists because this placeholder has no
+# network surface to expose. Source at apps/worker/ (Phase 5, PR #14) —
+# apps/worker/src/index.js writes /tmp/ready on startup and loops a
+# heartbeat, nothing listens on any port. No Postgres/Redis/Vault
+# credentials needed yet, hence no SecretStore/ExternalSecret/
+# ServiceAccount in this directory (see gitops/services/README.md). See
+# also this directory's own README.md.
+#
+# Namespace "apps" already created by gitops/services/backend/namespace.yaml
+# — see that file's comment and gitops/services/README.md.
+#
+# image tag: "latest-dev" — same placeholder-pending-first-CI-push reason
+# as gitops/services/backend/deployment.yaml; see that file's comment.
+#
+# No containerPort: nothing listens (apps/worker/Dockerfile has no EXPOSE
+# either), so none is declared here — an unused containerPort would be
+# misleading, not informative.
+#
+# readinessProbe: exec `cat /tmp/ready`, mirroring the exact pattern already
+# used by gitops/secrets-demo/deployment.yaml (same probe shape/timing) for
+# a workload with no HTTP surface to probe.
+#
+# securityContext.runAsUser/runAsGroup: 1000 — same official node image
+# "node" user, see gitops/services/backend/deployment.yaml's comment for the
+# doc-grounded uid/gid confirmation.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: apps
+  annotations:
+    # Sync wave "2": after the "apps" Namespace (wave "1"); grouped with the
+    # other three services which also land in wave "2".
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: worker
+          image: ghcr.io/alisson92/worker:latest-dev
+          readinessProbe:
+            exec:
+              command: ["cat", "/tmp/ready"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          # Requests/limits mandatory per docs/conventions.md. Smallest of
+          # the four: a placeholder heartbeat loop with no I/O, no HTTP
+          # server, no DB/cache/queue client yet.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi

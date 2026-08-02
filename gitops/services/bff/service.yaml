@@ -1,0 +1,19 @@
+# ClusterIP Service exposing bff in-cluster only — only the frontend (this
+# same namespace) calls it; nothing outside the cluster needs to reach the
+# BFF directly.
+apiVersion: v1
+kind: Service
+metadata:
+  name: bff
+  namespace: apps
+  annotations:
+    # Sync wave "2": grouped with deployment.yaml (both target the same
+    # workload rollout).
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  selector:
+    app: bff
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081

@@ -1,0 +1,19 @@
+# Namespace for all four Phase 5 application services (docs/phases.md):
+# backend, bff, frontend, worker. Unlike postgres/redis (separate trust/data
+# domains, one namespace each), these four are one cohesive application tier
+# that calls itself constantly (frontend -> bff -> backend) — see
+# gitops/services/README.md for the full reasoning. This is the ONLY
+# namespace.yaml among gitops/services/*; bff, frontend, and worker rely on
+# this Namespace already existing via Argo CD's recursive reconciliation of
+# gitops/ (root-app.yaml) and this sync-wave ordering.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apps
+  annotations:
+    # Sync wave "1": applied after the external-secrets Application (wave
+    # "0") so ESO's CRDs already exist when secretstore.yaml/
+    # externalsecret.yaml in this directory sync, same ordering rationale as
+    # gitops/data/postgres/namespace.yaml.
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "1"

@@ -1,0 +1,127 @@
+# Backend: orders/catalog API (docs/vision.md "Backend | Orders/catalog API
+# (business logic)"), source at apps/backend/ (Phase 5, docs/phases.md,
+# app-developer batch 1, PR #14). Talks to Postgres (transactional store)
+# and Redis (catalog cache) directly; BFF/frontend never reach these data
+# stores themselves (see gitops/services/README.md).
+#
+# image tag: "latest-dev" is a PLACEHOLDER. CI (.github/workflows/
+# service-ci.yml) only pushes to ghcr.io on a push to `main`
+# (`if: github.ref == 'refs/heads/main'`), and PR #14 (the app code/CI) is
+# not merged yet as of this manifest — so no real ghcr.io/<owner>/backend
+# tag exists to reference. Replace this with the actual `github.sha`-tagged
+# image (see service-ci.yml's `env.IMAGE`) once CI has pushed a real tag
+# from a merged main commit. Never leave a bare `latest` in place of this
+# comment — this placeholder is deliberately named to make its temporary,
+# pre-merge nature obvious at a glance.
+#
+# POSTGRES_HOST: CloudNativePG auto-creates a read-write Service named
+# "<cluster-name>-rw" in the Cluster's namespace
+# (https://cloudnative-pg.io/documentation/current/service_management/,
+# "the read-write service ... <cluster name>-rw"); confirmed the cluster
+# name is "postgres" in gitops/data/postgres/cluster.yaml
+# (metadata.name: postgres, namespace: postgres), so the Service is
+# "postgres-rw.postgres.svc.cluster.local".
+#
+# REDIS_HOST: confirmed against gitops/data/redis/service.yaml
+# (metadata.name: redis, namespace: redis) -> "redis.redis.svc.cluster.local".
+#
+# POSTGRES_DB: "orders", matching gitops/data/postgres/cluster.yaml's
+# spec.bootstrap.initdb.database.
+#
+# securityContext.runAsNonRoot + runAsUser/runAsGroup: 1000 — the official
+# node:22.23.2-alpine3.24 image (apps/backend/Dockerfile: `USER node`)
+# creates the "node" user/group at uid/gid 1000
+# (https://github.com/nodejs/docker-node/blob/main/docs/BestPractices.md,
+# "Non-root user"; the image's Dockerfile:
+# `groupadd --gid 1000 node && useradd --uid 1000 --gid node ... node`).
+# Explicit uid/gid (not just runAsNonRoot: true) makes kubelet's admission
+# check deterministic instead of relying on the image's default USER.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: apps
+  annotations:
+    # Sync wave "2": consumes the "backend-credentials" Secret produced by
+    # externalsecret.yaml (wave "1") and needs the postgres/redis Services
+    # (already synced in Phase 4, unrelated wave numbering) to resolve.
+    argocd.argoproj.io/sync-wave: "2"
+    # SkipDryRunOnMissingResource: same first-ever-sync CRD-then-CR ordering
+    # concern as gitops/data/postgres/cluster.yaml — this Deployment
+    # references a Secret produced by an ExternalSecret CR that may not
+    # exist yet at initial dry-run time.
+    # Docs: https://argo-cd.readthedocs.io/en/stable/user-guide/sync-options/
+    # (section: "Skip Dry Run for new custom resources types")
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: backend
+          image: ghcr.io/alisson92/backend:latest-dev
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: PORT
+              value: "8080"
+            - name: POSTGRES_HOST
+              value: "postgres-rw.postgres.svc.cluster.local"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              value: "orders"
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: backend-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backend-credentials
+                  key: POSTGRES_PASSWORD
+            - name: REDIS_HOST
+              value: "redis.redis.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backend-credentials
+                  key: REDIS_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          # Requests/limits mandatory per docs/conventions.md. Sized for a
+          # single-instance lab service that exercises both a SQL connection
+          # pool (Postgres) and a cache client (Redis) under light,
+          # non-production traffic — the highest per-request load of the
+          # four services, hence the largest request/limit among them.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

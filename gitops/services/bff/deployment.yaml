@@ -1,0 +1,81 @@
+# BFF: backend-for-frontend, aggregates backend calls for the UI
+# (docs/vision.md "BFF | Backend-for-frontend: aggregates backend calls for
+# the UI"), source at apps/bff/ (Phase 5, PR #14). Pure HTTP proxy — no
+# Postgres/Redis/Vault credentials needed, hence no SecretStore/
+# ExternalSecret/ServiceAccount in this directory (see
+# gitops/services/README.md).
+#
+# Namespace "apps" already created by gitops/services/backend/namespace.yaml
+# (sync wave "1", before this Deployment's wave "2") — see that file's
+# comment and gitops/services/README.md for why one shared namespace is
+# used for all four services.
+#
+# image tag: "latest-dev" — same placeholder-pending-first-CI-push reason
+# as gitops/services/backend/deployment.yaml; see that file's comment.
+#
+# BACKEND_URL: plain env var (not a ConfigMap) — a single URL string doesn't
+# earn a ConfigMap of its own per docs/conventions.md's anti-over-engineering
+# guidance ("no speculative abstraction"). Points at the backend ClusterIP
+# Service (gitops/services/backend/service.yaml) using the standard
+# `<service>.<namespace>.svc.cluster.local` DNS form
+# (https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/).
+#
+# securityContext.runAsUser/runAsGroup: 1000 — same official node image
+# "node" user, see gitops/services/backend/deployment.yaml's comment for the
+# doc-grounded uid/gid confirmation.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bff
+  namespace: apps
+  annotations:
+    # Sync wave "2": after the "apps" Namespace (wave "1"); grouped with
+    # backend/frontend which also land in wave "2".
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bff
+  template:
+    metadata:
+      labels:
+        app: bff
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: bff
+          image: ghcr.io/alisson92/bff:latest-dev
+          ports:
+            - containerPort: 8081
+              name: http
+          env:
+            - name: PORT
+              value: "8081"
+            - name: BACKEND_URL
+              value: "http://backend.apps.svc.cluster.local:8080"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          # Requests/limits mandatory per docs/conventions.md. Smaller than
+          # backend: a pure HTTP proxy with no DB/cache connection pool to
+          # maintain, so lower steady-state memory/CPU is expected.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
