@@ -23,9 +23,16 @@
 
 ## Phase 2 — Delivery (owner: gitops-engineer)
 
-- [todo] (gitops-engineer) Argo CD bootstrap (Terraform helm_release, pinned
-  version from official docs)
-- [todo] (gitops-engineer) App-of-apps root Application pointing at `gitops/`
+- [review] (gitops-engineer) Argo CD bootstrap (Terraform helm_release,
+  chart 10.2.2/v3.4.6, verified via ArtifactHub API) — branch
+  `phase-2/argocd-bootstrap-kind`
+- [review] (gitops-engineer) App-of-apps root Application (`gitops/root-app.yaml`,
+  recursive directory source) — same branch. Key decisions: ADR-005
+  (kubeconfig-only providers, two-phase apply, local state exception).
+  `terraform fmt`/`validate` clean. Not exit-gate-validated on a live
+  cluster: `terraform apply` (incl. `-target`) is a hard limit for this
+  agent (equivalent to `helm install`), denied by the permission system
+  when attempted — left for reviewer/human to run.
 
 ## Phases 3–7
 
