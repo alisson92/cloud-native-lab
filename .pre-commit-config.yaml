@@ -1,0 +1,14 @@
+# Pre-commit hooks for cloud-native-lab.
+#
+# Install: pip install pre-commit && pre-commit install
+# Run manually against the whole repo: pre-commit run --all-files
+#
+# See docs/conventions.md for the project's secret-hygiene rule (no secret,
+# token, or credential is ever committed to Git).
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    # Pinned to the latest gitleaks release verified at
+    # https://github.com/gitleaks/gitleaks/releases on 2026-08-02.
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks

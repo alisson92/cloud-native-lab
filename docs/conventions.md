@@ -33,6 +33,18 @@
 - The branch watched by Argo CD is protected: agents open changes against it
   but never merge (human gate).
 
+## Secret scanning (pre-commit)
+
+- This repo ships a `.pre-commit-config.yaml` running
+  [gitleaks](https://github.com/gitleaks/gitleaks) on every commit, as a
+  mechanical guardrail for the absolute no-secrets-in-git rule.
+- One-time setup: `pip install pre-commit && pre-commit install` (run from
+  the repo root). After that, gitleaks scans staged changes automatically
+  on every `git commit`.
+- Run it on demand against the whole repo with `pre-commit run --all-files`.
+- `SKIP=gitleaks git commit ...` bypasses the hook for a false positive;
+  use sparingly and never to bypass a real secret.
+
 ## Grounding in official documentation
 
 - Before writing configuration for any tool, consult its official
