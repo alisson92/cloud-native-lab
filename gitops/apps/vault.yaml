@@ -1,0 +1,76 @@
+# Vault, dev-mode, via the official HashiCorp Helm chart
+# (Phase 3, docs/architecture.md "Secrets" layer).
+#
+# Dev mode (server.dev.enabled) runs a single Vault server with in-memory
+# storage, auto-initialized and auto-unsealed — no init/unseal flow, no
+# persistence, data lost on restart. This is explicitly acceptable for this
+# lab; see docs/adr/006-vault-dev-mode-for-lab.md for the trade-off and the
+# production-hardening gap it accepts.
+#
+# The chart's own default for the dev-mode root token (server.dev.devRootToken)
+# is left untouched here — we never set or reference it, so no token value
+# ever appears in this file. Retrieve it at runtime from the pod's own logs
+# only (`kubectl logs -n vault vault-0 | grep 'Root Token'`); never commit it.
+# See gitops/secrets-demo/README.md for the one-time bootstrap that uses it.
+#
+# injector.enabled is set to false: the Vault Agent Injector (sidecar
+# mutating webhook) is a separate feature for injecting secrets into
+# arbitrary pods via annotations. This lab only needs External Secrets
+# Operator's Vault Kubernetes-auth integration (Phase 3 exit gate), so the
+# injector is unused weight — docs/conventions.md: "delete/omit what is not
+# used".
+#
+# Docs consulted:
+# - https://developer.hashicorp.com/vault/docs/platform/k8s/helm/run
+#   (dev-mode install, server.dev.enabled)
+# - https://developer.hashicorp.com/vault/docs/concepts/dev-server
+#   (dev-server behavior: in-memory storage, auto-unseal, data loss on
+#   restart)
+# - https://argo-cd.readthedocs.io/en/stable/user-guide/helm/
+#   (Helm chart repository as an Application source: repoURL + chart +
+#   targetRevision, no git repo needed)
+# - Chart version 0.34.0 confirmed live via `helm search repo
+#   hashicorp/vault --versions` against https://helm.releases.hashicorp.com
+#   (added locally, official HashiCorp Helm repo).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://helm.releases.hashicorp.com
+    chart: vault
+    targetRevision: 0.34.0
+    helm:
+      valuesObject:
+        server:
+          dev:
+            enabled: true
+          # Requests/limits mandatory per docs/conventions.md. Sized for a
+          # single dev-mode server handling a handful of demo requests, not
+          # production load.
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+        injector:
+          enabled: false
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vault
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Namespace does not pre-exist; Argo CD creates it (documented sync
+      # option, not a manually kubectl-applied namespace).
+      - CreateNamespace=true

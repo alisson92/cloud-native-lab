@@ -1,0 +1,58 @@
+# Minimal proof-of-flow workload: consumes the "test-secret" Kubernetes
+# Secret (produced by externalsecret.yaml) as an environment variable.
+#
+# `env | grep -q TEST_VALUE` at startup fails fast (non-zero exit, pod
+# CrashLoopBackOff) if the env var is missing/empty, which is itself a
+# useful negative-verification signal, not just a happy-path echo. The
+# actual value is never logged/printed — verification of the *value* is
+# done live via `kubectl exec ... -- env` or `kubectl get secret ...
+# -o jsonpath`, per the task's secret-handling rule, not via container logs.
+#
+# One replica, long-running (sleep loop) so `kubectl exec` can inspect the
+# live environment for verification; readinessProbe added per
+# docs/conventions.md ("readinessProbe present" checklist item) even though
+# nothing sends it traffic — it doubles as a liveness signal that the env
+# var check at startup succeeded.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: secret-consumer
+  namespace: secrets-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: secret-consumer
+  template:
+    metadata:
+      labels:
+        app: secret-consumer
+    spec:
+      containers:
+        - name: secret-consumer
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - |
+              env | grep -q '^TEST_VALUE=' || exit 1
+              touch /tmp/ready
+              sleep 3600
+          env:
+            - name: TEST_VALUE
+              valueFrom:
+                secretKeyRef:
+                  name: test-secret
+                  key: TEST_VALUE
+          readinessProbe:
+            exec:
+              command: ["cat", "/tmp/ready"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi

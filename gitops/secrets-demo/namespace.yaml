@@ -1,0 +1,8 @@
+# Namespace for the Phase 3 exit-gate proof: a test secret flowing
+# Vault -> External Secrets Operator -> a pod's environment variable.
+# Kept separate from `vault` and `external-secrets` (the operator
+# namespaces) since this is workload-side, not infra-side.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: secrets-demo
