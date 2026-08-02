@@ -45,9 +45,6 @@
   Phase 3). Branch `phase-4/data-services`, PR #11, reviewer APPROVED WITH
   NITS (1 pass, 0 fix rounds — nits non-blocking). Key decisions: ADR-007
   (Redis: plain Deployment), ADR-008 (Postgres: CloudNativePG kept).
-- [todo] Nit: `gitops/data/redis/deployment.yaml` `runAsGroup: 999` comment
-  cites the Debian image branch; actual `redis:8.10.0-alpine` GID is 1000
-  (harmless at runtime, comment/value should be corrected when convenient).
 - [todo] (HUMAN) PR #11 branched off unmerged `phase-4/gitleaks-precommit`
   (PR #10) — merge #10 first (or squash-merge #11 which already includes
   it) to avoid a conflict; then run the manual Vault bootstraps in
@@ -74,3 +71,9 @@
 - (security-engineer) Added gitleaks pre-commit hook (v8.30.1), doc note in
   `docs/conventions.md`. Verified clean on repo, blocks synthetic secret.
   PR opened from `phase-4/gitleaks-precommit`, not phase-gating.
+- (data-engineer) Fixed `gitops/data/redis/deployment.yaml` `runAsGroup`
+  999->1000 and its comment: `redis:8.10.0-alpine`'s Dockerfile allocates
+  gid 999 already used by Alpine, so `redis` group is gid 1000, user uid
+  999. Verified via `docker run redis:8.10.0-alpine id redis` and the
+  upstream Dockerfile. No PVC, so no fsGroup impact. PR #12,
+  branch `phase-4/redis-securitycontext-fix`, not phase-gating.

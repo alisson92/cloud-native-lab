@@ -23,12 +23,20 @@
 # The image's own entrypoint (redis/docker-library-redis docker-entrypoint.sh)
 # prepends `redis-server` when the first arg starts with `-`.
 #
-# securityContext.runAsUser/runAsGroup: 999 — the `redis` user/group baked
-# into the official image (confirmed via the image's Dockerfile.template:
-# `useradd -r -g redis -u 999 redis`, `/data` chowned to redis:redis). The
-# image has no default USER instruction (it uses gosu to step down from
-# root only when started as uid 0), so `runAsNonRoot: true` alone would
-# fail without this explicit uid/gid.
+# securityContext.runAsUser: 999 / runAsGroup: 1000 — the `redis` user/group
+# baked into the Alpine variant of the official image, which is what's
+# pinned below (redis:8.10.0-alpine). Alpine already has a system group at
+# gid 999, so the image's Dockerfile allocates the `redis` group at gid
+# 1000 instead and the `redis` user at uid 999: `addgroup -S -g 1000 redis;
+# adduser -S -G redis -u 999 redis` (source:
+# https://github.com/redis/docker-library-redis/blob/master/7.4/alpine/Dockerfile,
+# `/data` chowned to redis:redis in the same file). Independently confirmed
+# for this exact tag: `docker run --rm redis:8.10.0-alpine id redis` ->
+# `uid=999(redis) gid=1000(redis)`. The image has no default USER
+# instruction (it uses gosu to step down from root only when started as
+# uid 0), so `runAsNonRoot: true` alone would fail without this explicit
+# uid/gid. No PVC is mounted here (see the no-PVC note above), so there is
+# no fsGroup/volume-ownership concern tied to this gid.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -51,7 +59,7 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 999
-        runAsGroup: 999
+        runAsGroup: 1000
       containers:
         - name: redis
           image: redis:8.10.0-alpine
