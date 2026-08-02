@@ -37,7 +37,7 @@
   trade-off and the Kubernetes-auth-over-static-token choice. `helm
   template` clean for both charts; yamllint clean; no secret values in any
   file (grepped diff).
-- [todo] (HUMAN) Merge PR, then follow `gitops/secrets-demo/README.md`'s
+- [todo] (HUMAN) Merge PR #6, then follow `gitops/secrets-demo/README.md`'s
   one-time Vault bootstrap and exit-gate verification (blocked for agents:
   merge is a human gate, and `kubectl apply`/`exec`-driven Vault config
   writes are outside this agent's permitted read-only kubectl scope).
