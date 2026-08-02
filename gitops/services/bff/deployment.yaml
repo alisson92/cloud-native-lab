@@ -10,8 +10,8 @@
 # comment and gitops/services/README.md for why one shared namespace is
 # used for all four services.
 #
-# image tag: "latest-dev" — same placeholder-pending-first-CI-push reason
-# as gitops/services/backend/deployment.yaml; see that file's comment.
+# image tag: pinned to the github.sha of the main commit whose CI push
+# job actually ran end-to-end (PR #16 merge). See that file's comment.
 #
 # BACKEND_URL: plain env var (not a ConfigMap) — a single URL string doesn't
 # earn a ConfigMap of its own per docs/conventions.md's anti-over-engineering
@@ -48,7 +48,7 @@ spec:
         runAsGroup: 1000
       containers:
         - name: bff
-          image: ghcr.io/alisson92/bff:latest-dev
+          image: ghcr.io/alisson92/bff:ed1a6ca9210717a06bc79ebe83bce8ea8e93cbf6
           ports:
             - containerPort: 8081
               name: http

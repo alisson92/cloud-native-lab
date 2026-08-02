@@ -4,15 +4,13 @@
 # and Redis (catalog cache) directly; BFF/frontend never reach these data
 # stores themselves (see gitops/services/README.md).
 #
-# image tag: "latest-dev" is a PLACEHOLDER. CI (.github/workflows/
-# service-ci.yml) only pushes to ghcr.io on a push to `main`
-# (`if: github.ref == 'refs/heads/main'`), and PR #14 (the app code/CI) is
-# not merged yet as of this manifest — so no real ghcr.io/<owner>/backend
-# tag exists to reference. Replace this with the actual `github.sha`-tagged
-# image (see service-ci.yml's `env.IMAGE`) once CI has pushed a real tag
-# from a merged main commit. Never leave a bare `latest` in place of this
-# comment — this placeholder is deliberately named to make its temporary,
-# pre-merge nature obvious at a glance.
+# image tag: pinned to the github.sha of the main commit that merged PR #16
+# (the CI fix round), which is the first commit whose CI push job actually
+# ran and succeeded end-to-end (build->test->scan->push) — confirmed live
+# via `docker pull ghcr.io/alisson92/backend:ed1a6ca9...`. Tags are
+# immutable per commit (service-ci.yml's `env.IMAGE` uses `github.sha`), so
+# this must be bumped by hand to a new sha each time a future change to
+# apps/backend/ merges to main and CI pushes a new image.
 #
 # POSTGRES_HOST: CloudNativePG auto-creates a read-write Service named
 # "<cluster-name>-rw" in the Cluster's namespace
@@ -69,7 +67,7 @@ spec:
         runAsGroup: 1000
       containers:
         - name: backend
-          image: ghcr.io/alisson92/backend:latest-dev
+          image: ghcr.io/alisson92/backend:ed1a6ca9210717a06bc79ebe83bce8ea8e93cbf6
           ports:
             - containerPort: 8080
               name: http
