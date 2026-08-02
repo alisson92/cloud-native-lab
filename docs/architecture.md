@@ -9,7 +9,8 @@
 3. **Secrets** — Vault (dev-appropriate setup) + External Secrets Operator.
    No secret ever lands in Git or in plain `values.yaml`.
 4. **Data** — PostgreSQL via CloudNativePG operator; Redis via a simple,
-   well-supported deployment. Operators over standalone charts (see ADR-001).
+   well-supported deployment (see ADR-007 for Redis, ADR-008 for the
+   Postgres-operator trade-off).
 5. **Applications** — backend → BFF → frontend. Each service: one container,
    one Helm chart or plain manifests (whichever is simpler), one CI pipeline.
 6. **Messaging** — RabbitMQ (task queue) first; Kafka via Strimzi operator
