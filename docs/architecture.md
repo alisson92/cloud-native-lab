@@ -38,7 +38,11 @@ local/
 terraform/          # Foundation + bootstrap + delivery (modules kept minimal)
 gitops/             # Everything Argo CD reconciles
   root-app.yaml     # App-of-apps root Application (watches gitops/ recursively)
-  apps/             # Per-service Application manifests (from Phase 3 onward)
+  apps/             # Infra Argo CD Application manifests, Helm-chart-sourced
+                    # (vault, external-secrets, cloudnativepg-operator), from
+                    # Phase 3 onward — not per-service application workloads
+  services/         # Per-service plain manifests for the application tier
+                    # (backend, bff, frontend, worker), from Phase 5 onward
 apps/
   backend/
   bff/

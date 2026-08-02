@@ -1,0 +1,26 @@
+# ClusterIP Service — frontend is the one service in this tier meant to be
+# reached from outside the cluster, but per docs/phases.md Phase 5 exit gate
+# ("Order placed end-to-end", a one-time human verification, not a
+# steady-state requirement) this is done via `kubectl port-forward`, not a
+# NodePort/Ingress. Consistent with how Phases 3-4 were verified (Vault UI,
+# psql, redis-cli — all via port-forward/exec, no Ingress controller
+# introduced anywhere in this repo yet).
+#
+# kubectl -n apps port-forward svc/frontend 8082:8082
+# then open http://localhost:8082/ in a browser.
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: apps
+  annotations:
+    # Sync wave "2": grouped with deployment.yaml (both target the same
+    # workload rollout).
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  selector:
+    app: frontend
+  ports:
+    - name: http
+      port: 8082
+      targetPort: 8082
