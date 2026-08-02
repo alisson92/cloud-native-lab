@@ -39,8 +39,16 @@ function buildApp(fetchImpl = fetch) {
 
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
+    // Only intentional client errors (carrying an explicit statusCode) have
+    // a message safe to return. Unexpected failures (e.g. BFF/network
+    // errors) default to 500 and must never echo err.message — it can
+    // contain upstream connection details. Mirrors apps/backend/src/index.js.
     const statusCode = err.statusCode || 500;
-    res.status(statusCode).json({ error: err.message });
+    const message = err.statusCode ? err.message : 'internal server error';
+    if (!err.statusCode) {
+      console.error('unhandled request error', err);
+    }
+    res.status(statusCode).json({ error: message });
   });
 
   return app;
