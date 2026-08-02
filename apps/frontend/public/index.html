@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>cloud-native-lab storefront</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <h1>Storefront</h1>
+
+    <section id="catalog">
+      <h2>Products</h2>
+      <ul id="product-list"></ul>
+    </section>
+
+    <section id="confirmation" hidden>
+      <h2>Order confirmed</h2>
+      <p id="confirmation-text"></p>
+    </section>
+
+    <script>
+      async function loadCatalog() {
+        const res = await fetch('/api/catalog');
+        const items = await res.json();
+        const list = document.getElementById('product-list');
+        list.innerHTML = '';
+        for (const item of items) {
+          const li = document.createElement('li');
+          const price = (item.price_cents / 100).toFixed(2);
+          li.textContent = `${item.name} — $${price} `;
+          const button = document.createElement('button');
+          button.textContent = 'Order';
+          button.addEventListener('click', () => placeOrder(item.id));
+          li.appendChild(button);
+          list.appendChild(li);
+        }
+      }
+
+      async function placeOrder(productId) {
+        const res = await fetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productId, quantity: 1 }),
+        });
+        const confirmation = await res.json();
+        if (!res.ok) {
+          alert(confirmation.error || 'Order failed');
+          return;
+        }
+        const total = (confirmation.totalCents / 100).toFixed(2);
+        document.getElementById('confirmation-text').textContent =
+          `Order #${confirmation.orderId} confirmed — total $${total}`;
+        document.getElementById('confirmation').hidden = false;
+      }
+
+      loadCatalog();
+    </script>
+  </body>
+</html>
