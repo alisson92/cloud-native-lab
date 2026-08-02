@@ -37,17 +37,22 @@
   `secret-consumer` pod env reflects the Vault-stored value. Key
   decision: ADR-006.
 
-## Phase 4 — Data (owner: data-engineer) — CODE DONE, PENDING REVIEW
+## Phase 4 — Data (owner: data-engineer) — REVIEWED, PENDING MERGE
 
 - Summary: CloudNativePG operator + single-instance `Cluster` (`gitops/
   data/postgres/`) and a plain Redis Deployment (`gitops/data/redis/`),
   both credentialed from Vault via ESO (same Kubernetes-auth pattern as
-  Phase 3). Branch `phase-4/data-services`, PR open, not merged (human
-  gate). Key decisions: ADR-007 (Redis: plain Deployment), ADR-008
-  (Postgres: CloudNativePG operator kept, weighed against a StatefulSet).
-- [todo] (HUMAN) Merge PR, run the manual Vault bootstraps in
-  `gitops/data/postgres/README.md` and `gitops/data/redis/README.md`,
-  verify the exit gate on Kind (both reachable in-cluster).
+  Phase 3). Branch `phase-4/data-services`, PR #11, reviewer APPROVED WITH
+  NITS (1 pass, 0 fix rounds — nits non-blocking). Key decisions: ADR-007
+  (Redis: plain Deployment), ADR-008 (Postgres: CloudNativePG kept).
+- [todo] Nit: `gitops/data/redis/deployment.yaml` `runAsGroup: 999` comment
+  cites the Debian image branch; actual `redis:8.10.0-alpine` GID is 1000
+  (harmless at runtime, comment/value should be corrected when convenient).
+- [todo] (HUMAN) PR #11 branched off unmerged `phase-4/gitleaks-precommit`
+  (PR #10) — merge #10 first (or squash-merge #11 which already includes
+  it) to avoid a conflict; then run the manual Vault bootstraps in
+  `gitops/data/postgres/README.md` and `gitops/data/redis/README.md`, and
+  verify the exit gate on Kind (both services reachable in-cluster).
 
 ## Phases 5–7
 
