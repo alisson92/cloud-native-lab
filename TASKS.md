@@ -21,19 +21,12 @@
   `terraform/bootstrap/README.md`). Attach the real `plan` output before
   each `apply`.
 
-## Phase 2 — Delivery (owner: gitops-engineer) — CODE DONE, REVIEWER APPROVED
+## Phase 2 — Delivery (owner: gitops-engineer) — DONE
 
-- Summary: Argo CD bootstrap (Terraform helm_release, chart 10.2.2/v3.4.6)
-  + app-of-apps root (`gitops/root-app.yaml`, recursive directory source),
-  branch `phase-2/argocd-bootstrap-kind` (includes ADR-004, unpushed on
-  local `main` due to branch protection — will land via this PR). Reviewer
-  APPROVED (1 pass, 0 fix rounds). Key decisions: ADR-005 (kubeconfig-only
-  providers, two-phase apply, local state exception).
-- [todo] (HUMAN) Open PR for `phase-2/argocd-bootstrap-kind` → `main`. Before
-  merging, run the exit-gate validation locally (zero cost, not gated):
-  `kind create cluster --config local/kind/kind-config.yaml`, then the
-  two-phase apply in `terraform/delivery/README.md`, then confirm
-  `kubectl get application -n argocd root-app` shows `Synced`/`Healthy`.
+- Summary: Argo CD bootstrap (Terraform helm_release) + app-of-apps root
+  merged via PR #4. Reviewer APPROVED (1 pass, 0 fix rounds). Human
+  verified the exit gate on Kind: `root-app` `Synced`/`Healthy`. Full log:
+  `docs/phase-logs/phase-2.md`. Key decision: ADR-005.
 
 ## Phases 3–7
 
@@ -50,3 +43,5 @@
 
 - (orchestrator) Phase 1 log archived to `docs/phase-logs/phase-1.md`;
   board slimmed per the token-discipline rules added to `CLAUDE.md`.
+- (orchestrator) Phase 2 log archived to `docs/phase-logs/phase-2.md`;
+  exit gate confirmed by human on Kind (`root-app` `Synced`/`Healthy`).
