@@ -55,8 +55,16 @@ async function main() {
 
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
+    // Only intentional client errors (orders.js sets `statusCode` on them)
+    // carry a message safe to return. Unexpected failures (DB/Redis errors,
+    // etc.) default to 500 and must never echo `err.message` back to the
+    // client — that can leak connection details, SQL, or stack info.
     const statusCode = err.statusCode || 500;
-    res.status(statusCode).json({ error: err.message });
+    const message = err.statusCode ? err.message : 'internal server error';
+    if (!err.statusCode) {
+      console.error('unhandled request error', err);
+    }
+    res.status(statusCode).json({ error: message });
   });
 
   app.listen(PORT, () => {
