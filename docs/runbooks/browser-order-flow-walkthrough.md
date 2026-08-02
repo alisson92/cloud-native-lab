@@ -167,9 +167,14 @@ catalog went through Redis's cache (not required for a manual test, but
 closes the loop if you want a technical confirmation):
 
 ```bash
-# Confirms the order was written to Postgres
-kubectl -n postgres exec -it postgres-1 -- \
-  sh -c 'PGPASSWORD=$(kubectl get secret postgres-app-credentials -n postgres -o jsonpath="{.data.password}" | base64 -d) psql -h 127.0.0.1 -U orders -d orders -c "SELECT * FROM orders ORDER BY id DESC LIMIT 1;"'
+# Confirms the order was written to Postgres. The password must be
+# resolved by *your* shell, not the pod's — the postgres container has no
+# kubectl binary, so nesting `kubectl get secret` inside `sh -c '...'`
+# (single-quoted) fails with "kubectl: not found" and silently falls back
+# to psql's interactive password prompt instead.
+PG_PASSWORD=$(kubectl -n postgres get secret postgres-app-credentials -o jsonpath='{.data.password}' | base64 -d)
+kubectl -n postgres exec -i postgres-1 -- \
+  sh -c "PGPASSWORD='$PG_PASSWORD' psql -h 127.0.0.1 -U orders -d orders -c 'SELECT * FROM orders ORDER BY id DESC LIMIT 1;'"
 ```
 
 ```bash
@@ -179,6 +184,12 @@ kubectl -n redis exec deploy/redis -- redis-cli \
   -a "$(kubectl -n redis get secret redis-credentials -o jsonpath='{.data.REDIS_PASSWORD}' | base64 -d)" \
   GET catalog:items
 ```
+
+> The `Warning: Using a password with '-a' ... may not be safe` line is
+> `redis-cli`'s own generic advisory about passing a password as a CLI
+> argument (visible to anyone who can list processes on that node) — it
+> is expected here and not a failure. It's shown, not silenced, precisely
+> so nobody normalizes passing real production credentials this way.
 
 **Success criteria:**
 - [ ] The storefront page loaded the catalog in the browser
