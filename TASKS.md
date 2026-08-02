@@ -31,14 +31,15 @@
 ## Phase 3 — Secrets (owner: security-engineer) — CODE DONE
 
 - Summary: Vault (dev-mode) + ESO via GitOps (`gitops/apps/vault.yaml`,
-  `gitops/apps/external-secrets.yaml`). Vault<->ESO wiring (`SecretStore`,
-  Kubernetes-auth, `ExternalSecret`, test pod) in `gitops/secrets-demo/`.
-  ADR-006: dev-mode trade-off + Kubernetes-auth-over-static-token. Sync-wave
-  ordering (0=vault/eso, 1=secrets-demo) added per reviewer follow-up. `helm
-  template`/yamllint clean; no secret values in any file. PR #6.
-- [todo] (HUMAN) Merge PR #6, then run `gitops/secrets-demo/README.md`'s
-  one-time Vault bootstrap and exit-gate verification (human gate: merge +
-  kubectl writes outside agent's read-only scope).
+  `gitops/apps/external-secrets.yaml`). Vault<->ESO wiring in
+  `gitops/secrets-demo/`. ADR-006: dev-mode + Kubernetes-auth trade-offs.
+  PR #6. Live bug found post-merge: `root-app` dry-run pre-flight failed on
+  ESO CRs before their CRDs existed, aborting wave "0" too — fixed with
+  `SkipDryRunOnMissingResource=true` on the CR annotations (docs: argo-cd
+  sync-options page), branch `phase-3/fix-sync-dry-run`, PR open/unmerged.
+- [todo] (HUMAN) Merge PR #6 + the fix PR (in that order or as a rebase),
+  then run `gitops/secrets-demo/README.md`'s Vault bootstrap and exit-gate
+  verification (human gate: merge + kubectl writes outside agent scope).
 
 ## Phases 4–7
 
