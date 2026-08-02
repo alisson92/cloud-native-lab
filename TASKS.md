@@ -37,19 +37,17 @@
   `secret-consumer` pod env reflects the Vault-stored value. Key
   decision: ADR-006.
 
-## Phase 4 — Data (owner: data-engineer) — REVIEWED, PENDING MERGE
+## Phase 4 — Data (owner: data-engineer) — DONE
 
-- Summary: CloudNativePG operator + single-instance `Cluster` (`gitops/
-  data/postgres/`) and a plain Redis Deployment (`gitops/data/redis/`),
-  both credentialed from Vault via ESO (same Kubernetes-auth pattern as
-  Phase 3). Branch `phase-4/data-services`, PR #11, reviewer APPROVED WITH
-  NITS (1 pass, 0 fix rounds — nits non-blocking). Key decisions: ADR-007
-  (Redis: plain Deployment), ADR-008 (Postgres: CloudNativePG kept).
-- [todo] (HUMAN) PR #11 branched off unmerged `phase-4/gitleaks-precommit`
-  (PR #10) — merge #10 first (or squash-merge #11 which already includes
-  it) to avoid a conflict; then run the manual Vault bootstraps in
-  `gitops/data/postgres/README.md` and `gitops/data/redis/README.md`, and
-  verify the exit gate on Kind (both services reachable in-cluster).
+- Summary: CloudNativePG operator + single-instance `Cluster` and a plain
+  Redis Deployment, both via GitOps, both credentialed from Vault via ESO
+  (same Kubernetes-auth pattern as Phase 3). PRs #10-#12 merged. One
+  live-only reconciliation race found and fixed post-merge (ExternalSecret
+  backoff + stalled Argo CD sync after Vault bootstrap; see
+  `docs/phase-logs/phase-4.md`). Human verified the exit gate on Kind:
+  `psql`/`redis-cli` connected using Vault-sourced credentials. Key
+  decisions: ADR-007 (Redis: plain Deployment), ADR-008 (Postgres:
+  CloudNativePG kept).
 
 ## Phases 5–7
 
@@ -77,3 +75,8 @@
   999. Verified via `docker run redis:8.10.0-alpine id redis` and the
   upstream Dockerfile. No PVC, so no fsGroup impact. PR #12,
   branch `phase-4/redis-securitycontext-fix`, not phase-gating.
+- (orchestrator) Phase 4 log archived to `docs/phase-logs/phase-4.md`;
+  exit gate confirmed by human on Kind (Postgres `psql` + Redis
+  `redis-cli` both authenticated with Vault-sourced credentials). One
+  live-only ExternalSecret/Argo-CD-sync race diagnosed and fixed post-merge
+  (see phase log).
