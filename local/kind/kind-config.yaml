@@ -1,0 +1,18 @@
+# Kind cluster config for local, zero-cost validation of Phases 2-6 (see
+# docs/adr/004-local-first-validation-with-kind.md). Single control-plane
+# node only — no extra worker nodes, no ingress port mappings: this lab does
+# not need multi-node scheduling or host ingress yet, and adding either now
+# would be speculative (docs/conventions.md: "no speculative abstraction").
+#
+# `kind: Cluster` / `apiVersion: kind.x-k8s.io/v1alpha4` is the current Kind
+# config schema, and an explicit single `role: control-plane` node is the
+# documented way to be explicit about an otherwise-implicit default.
+# Doc consulted: https://kind.sigs.k8s.io/docs/user/configuration/
+#
+# `name` here becomes the kubeconfig context `kind-<name>` (Kind prefixes
+# every context with `kind-`), i.e. `kind-cloud-native-lab`.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: cloud-native-lab
+nodes:
+  - role: control-plane
