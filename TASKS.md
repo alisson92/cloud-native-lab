@@ -109,6 +109,16 @@
   repo setting "Allow GitHub Actions to create and approve pull requests"
   (one-time, see ADR-013). Branch `ci/automate-image-tag-bump`.
 
+## Phase 6 fix (owner: security-engineer) — not phase-gating
+
+- (security-engineer) Fixed root-app sync failure: backend and worker's
+  SecretStores both named `vault-backend` in the shared `apps` namespace
+  collided into one object (namespace+kind+name identity), blocking the
+  whole tree's sync (RepeatedResourceWarning). Renamed worker's to
+  `vault-backend-worker`; backend untouched. Verified no other
+  SecretStore name collisions exist elsewhere in gitops/ (all others are
+  in distinct namespaces). Branch `phase-6/fix-secretstore-name-collision`.
+
 ## Phase 7 — Operations
 
 - [todo] To be broken down by the orchestrator when Phase 6 gate passes.
