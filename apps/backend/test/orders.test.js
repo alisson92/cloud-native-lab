@@ -97,3 +97,36 @@ test('createOrder does not fail the request if publishing fails', async () => {
   assert.equal(order.totalCents, 500);
   assert.ok(client.queries.some((q) => q.sql === 'COMMIT'));
 });
+
+test('createOrder publishes an order-created event to Kafka after commit', async () => {
+  const client = fakeClient([{ price_cents: 500 }]);
+  const pool = { connect: async () => client };
+  const sent = [];
+  const fakeProducer = {
+    send: async ({ topic, messages }) => {
+      sent.push({ topic, messages });
+    },
+  };
+
+  const order = await createOrder(pool, { productId: 1, quantity: 2 }, null, fakeProducer);
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].topic, 'order-events');
+  assert.equal(sent[0].messages[0].key, String(order.id));
+  assert.deepEqual(JSON.parse(sent[0].messages[0].value), { type: 'order.created', order });
+});
+
+test('createOrder does not fail the request if the Kafka publish fails', async () => {
+  const client = fakeClient([{ price_cents: 500 }]);
+  const pool = { connect: async () => client };
+  const fakeProducer = {
+    send: async () => {
+      throw new Error('broker unreachable');
+    },
+  };
+
+  const order = await createOrder(pool, { productId: 1, quantity: 1 }, null, fakeProducer);
+
+  assert.equal(order.totalCents, 500);
+  assert.ok(client.queries.some((q) => q.sql === 'COMMIT'));
+});

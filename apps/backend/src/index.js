@@ -4,6 +4,7 @@ const express = require('express');
 const { createPool, bootstrapSchema } = require('./db');
 const { createRedisClient } = require('./redis');
 const { createRabbitMQChannel } = require('./rabbitmq');
+const { createKafkaProducer } = require('./kafka');
 const { getCatalog } = require('./catalog');
 const { createOrder, getOrder } = require('./orders');
 
@@ -16,6 +17,7 @@ async function main() {
   await bootstrapSchema(pgPool);
   await redisClient.connect();
   const rabbitmqChannel = await createRabbitMQChannel();
+  const kafkaProducer = await createKafkaProducer();
 
   const app = express();
   app.use(express.json());
@@ -35,7 +37,7 @@ async function main() {
 
   app.post('/orders', async (req, res, next) => {
     try {
-      const order = await createOrder(pgPool, req.body, rabbitmqChannel);
+      const order = await createOrder(pgPool, req.body, rabbitmqChannel, kafkaProducer);
       res.status(201).json(order);
     } catch (err) {
       next(err);

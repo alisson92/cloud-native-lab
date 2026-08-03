@@ -10,11 +10,12 @@
 # via `docker pull ghcr.io/alisson92/backend:ed1a6ca9...`. Tags are
 # immutable per commit (service-ci.yml's `env.IMAGE` uses `github.sha`), so
 # this must be bumped by hand to a new sha each time a future change to
-# apps/backend/ merges to main and CI pushes a new image. NOTE (Phase 6):
-# this PR changes apps/backend/ (rabbitmq.js, new amqplib dependency) but
-# cannot know the merge commit's sha in advance — bumping this tag to the
-# image CI actually pushes for this change is a required follow-up once
-# this PR is merged, same pattern as Phase 5's post-merge tag-bump fix.
+# apps/backend/ merges to main and CI pushes a new image. NOTE (Phase 6
+# batch 2): this PR again changes apps/backend/ (kafka.js, new
+# @confluentinc/kafka-javascript dependency) but cannot know the merge
+# commit's sha in advance — bumping this tag to the image CI actually
+# pushes for this change is a required follow-up once this PR is merged,
+# same pattern as Phase 5's and batch 1's post-merge tag-bump fixes.
 #
 # POSTGRES_HOST: CloudNativePG auto-creates a read-write Service named
 # "<cluster-name>-rw" in the Cluster's namespace
@@ -30,6 +31,14 @@
 # RABBITMQ_HOST (Phase 6): confirmed against gitops/data/rabbitmq/
 # service.yaml (metadata.name: rabbitmq, namespace: rabbitmq) ->
 # "rabbitmq.rabbitmq.svc.cluster.local".
+#
+# KAFKA_HOST (Phase 6 batch 2): Strimzi auto-creates a bootstrap Service
+# named "<Kafka CR name>-kafka-bootstrap" in the Kafka CR's namespace
+# (confirmed live in this session against Strimzi's own docs/examples);
+# gitops/data/kafka/cluster.yaml's Kafka CR is named "kafka" in namespace
+# "kafka", so the Service is
+# "kafka-kafka-bootstrap.kafka.svc.cluster.local", port 9092 (the "plain"
+# SASL_PLAINTEXT/SCRAM-SHA-512 listener defined there).
 #
 # POSTGRES_DB: "orders", matching gitops/data/postgres/cluster.yaml's
 # spec.bootstrap.initdb.database.
@@ -121,6 +130,20 @@ spec:
                 secretKeyRef:
                   name: backend-credentials
                   key: RABBITMQ_PASSWORD
+            - name: KAFKA_HOST
+              value: "kafka-kafka-bootstrap.kafka.svc.cluster.local"
+            - name: KAFKA_PORT
+              value: "9092"
+            - name: KAFKA_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: backend-credentials
+                  key: KAFKA_USERNAME
+            - name: KAFKA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backend-credentials
+                  key: KAFKA_PASSWORD
           readinessProbe:
             httpGet:
               path: /health
