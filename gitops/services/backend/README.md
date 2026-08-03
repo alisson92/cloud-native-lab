@@ -98,12 +98,16 @@ meaning it authenticated to both brokers successfully.
    # gitops/services/worker/README.md.
    ```
 
-4. Confirm the event landed in Kafka's `order-events` topic. Read the
-   backend Kafka user's password from the same Secret Strimzi's User
-   Operator authenticates against
-   (`gitops/data/kafka/externalsecret.yaml`), then run a disposable
-   consumer pod using the exact Strimzi/Kafka version pinned in
-   `gitops/data/kafka/cluster.yaml` (`1.1.0-kafka-4.3.0` —
+4. Confirm the event landed in Kafka's `order-events` topic. `backend`'s
+   own `KafkaUser` is producer-only (`Describe`+`Write` ACLs only, per
+   `gitops/data/kafka/user.yaml` and ADR-012's least-privilege intent — it
+   CANNOT consume, and will fail with `GroupAuthorizationException` if
+   tried). Use the dedicated read-only `gate-verifier` `KafkaUser` instead
+   (`gitops/data/kafka/gate-verifier-user.yaml`,
+   `docs/adr/015-kafka-gate-verifier-user.md`) — a debug-only identity
+   whose password Strimzi generates and owns itself (not Vault-sourced).
+   Run a disposable consumer pod using the exact Strimzi/Kafka version
+   pinned in `gitops/data/kafka/cluster.yaml` (`1.1.0-kafka-4.3.0` —
    `strimzi-kafka-operator` chart version 1.1.0, Kafka 4.3.0) — command
    shape confirmed against
    https://strimzi.io/quickstarts/ (kafka-console-consumer.sh invocation)
@@ -111,7 +115,7 @@ meaning it authenticated to both brokers successfully.
    (SASL_PLAINTEXT + SCRAM-SHA-512 client config via `--consumer-property`):
 
    ```sh
-   KAFKA_PASSWORD=$(kubectl -n kafka get secret kafka-app-credentials \
+   GATE_VERIFIER_PASSWORD=$(kubectl -n kafka get secret gate-verifier \
      -o jsonpath='{.data.password}' | base64 -d)
 
    kubectl -n kafka run kafka-consumer -ti --rm=true --restart=Never \
@@ -120,9 +124,10 @@ meaning it authenticated to both brokers successfully.
      --bootstrap-server kafka-kafka-bootstrap:9092 \
      --topic order-events \
      --from-beginning \
+     --group gate-verifier \
      --consumer-property security.protocol=SASL_PLAINTEXT \
      --consumer-property sasl.mechanism=SCRAM-SHA-512 \
-     --consumer-property "sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=\"backend\" password=\"${KAFKA_PASSWORD}\";"
+     --consumer-property "sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=\"gate-verifier\" password=\"${GATE_VERIFIER_PASSWORD}\";"
    # {"type":"order.created","order":{"id":<N>,"productId":1,"quantity":1,"totalCents":...}}
    ```
 
