@@ -73,7 +73,13 @@
 
 ## Phase 6 — Messaging (owner: data-engineer)
 
-- [todo] To be broken down by the orchestrator. Definitions in `docs/phases.md`.
+- [review] (data-engineer) Batch 1/2: RabbitMQ task queue, backend
+  publishes on order commit, worker consumes (stub email/invoice). PR #23,
+  branch `phase-6/rabbitmq`, based on `phase-5/vault-bootstrap-fix` (PR
+  #22, unmerged). Worker got its first Vault/ESO wiring, scoped to
+  `secret/data/rabbitmq` only via a distinct `worker-vault-auth` SA (see
+  PR body: deviation from brief's literal `vault-auth` naming, for
+  least-privilege). Key decision: ADR-011. Kafka is batch 2, untouched.
 
 ## Phase 7 — Operations
 
