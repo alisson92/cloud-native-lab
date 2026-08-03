@@ -101,3 +101,19 @@ moving `gitops/services/backend/deployment.yaml` to wave "4", after the
 `KafkaUser` (see that file's comment for the full reasoning). This is a
 one-off exception to services otherwise sharing wave "2"; a future
 service authenticating to Kafka at startup needs the same treatment.
+
+**Also harder (authorization was missed in the original implementation):**
+this ADR's own `KafkaUser` "backend" design (`Describe`+`Write` on
+`order-events`) declares `spec.authorization.type: simple` ACLs, but PR #24
+never added the matching `spec.kafka.authorization: {type: simple}` to the
+`Kafka` CR — so Strimzi's User Operator rejected the `KafkaUser` at
+reconcile time ("Simple authorization ACL rules are configured but not
+supported in the Kafka cluster configuration"), blocking the whole sync
+tree. Fixed post-merge by adding `authorization: {type: simple}` to
+`gitops/data/kafka/cluster.yaml` (PR #28). That fix correctly moved the
+cluster from open/no-authorizer to deny-by-default-unless-ACL'd, which in
+turn closed off the previously-open (unintentional) read access the
+original exit-gate verification procedure relied on — `backend` is
+producer-only by this ADR's own design, so nothing in this repo could read
+`order-events` anymore. This is what necessitated the read-only
+`gate-verifier` `KafkaUser` added in ADR-015.

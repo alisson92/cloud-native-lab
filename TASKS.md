@@ -167,6 +167,15 @@
   needed). ADR-015. Updated `gitops/data/kafka/README.md` and
   `gitops/services/backend/README.md`'s now-stale consume example.
 
+## Phase 6 fix (owner: data-engineer) — not phase-gating
+
+- (data-engineer) Reviewer follow-up: ADR-012's Consequences never mentioned
+  PR #28's `spec.kafka.authorization` fix nor that its own producer-only ACL
+  design is what forced ADR-015's `gate-verifier` addition. Appended an
+  "Also harder" addendum (same style as the existing sync-wave entry)
+  documenting both, cross-referencing ADR-015. Docs-only, no manifest
+  change. Branch `phase-6/adr-012-authorization-addendum`.
+
 ## Phase 7 — Operations
 
 - [todo] To be broken down by the orchestrator when Phase 6 gate passes.
