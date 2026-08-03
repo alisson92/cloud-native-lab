@@ -89,3 +89,15 @@ with SASL/SCRAM-SHA-512 authentication only — passwords are never sent in
 the clear (SCRAM is challenge-response), but data in transit is
 unencrypted, consistent with every other in-cluster service in this lab
 trusting the cluster network boundary instead of adding TLS.
+
+**Also harder (startup ordering):** because the `KafkaUser` CR (wave "3")
+is what actually registers the backend's SCRAM credentials with the
+broker, and the backend's Kafka producer connects unconditionally (and
+non-retriably on auth failure) at process startup, backend cannot safely
+share the Kafka broker's own sync wave ("2") — it would race the
+`KafkaUser` and, on a fresh sync, crash-loop before that CR ever gets a
+chance to sync (Argo CD gates wave N+1 on wave N's health). Mitigated by
+moving `gitops/services/backend/deployment.yaml` to wave "4", after the
+`KafkaUser` (see that file's comment for the full reasoning). This is a
+one-off exception to services otherwise sharing wave "2"; a future
+service authenticating to Kafka at startup needs the same treatment.

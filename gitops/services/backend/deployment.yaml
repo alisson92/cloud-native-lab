@@ -57,10 +57,35 @@ metadata:
   name: backend
   namespace: apps
   annotations:
-    # Sync wave "2": consumes the "backend-credentials" Secret produced by
+    # Sync wave "4" (Phase 6 batch 2 fix; was "2" before Kafka landed):
+    # `apps/backend/src/index.js`'s main() calls `createKafkaProducer()`
+    # unconditionally at startup (unlike the per-order publish in
+    # orders.js/kafka.js, which is best-effort and swallows failures).
+    # KafkaJS-compatible clients (confirmed against
+    # @confluentinc/kafka-javascript's own docs, fetched live in this
+    # session: https://docs.confluent.io/kafka-clients/javascript/current/migration.html)
+    # throw non-retriably on a SASL/SCRAM authentication failure at
+    # connect() — there is no lazy-connect option and connection-time auth
+    # failures are not covered by the client's `retry` block (that only
+    # covers Produce request retries). The broker only recognizes backend's
+    # SCRAM credentials once gitops/data/kafka/user.yaml's KafkaUser CR
+    # (wave "3") reconciles. Backend at the SAME wave as the Kafka broker
+    # CRs (gitops/data/kafka/cluster.yaml, wave "2") would race that
+    # KafkaUser and, per
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    # ("all resources in wave N must be healthy ... before Argo CD will
+    # proceed to wave N+1"), a crash-looping backend at wave 2 would
+    # permanently block wave 3 (the KafkaUser) from ever syncing —
+    # deadlock, not a self-resolving race. Moving backend to wave "4"
+    # (after the KafkaUser, wave "3") breaks the deadlock. Verified this
+    # does not create a NEW ordering problem: bff's and frontend's own
+    # `/health` readiness checks (gitops/services/bff/deployment.yaml,
+    # gitops/services/frontend/deployment.yaml) do not call backend, so
+    # nothing at wave "2" depends on backend being healthy at sync time.
+    # Also consumes the "backend-credentials" Secret produced by
     # externalsecret.yaml (wave "1") and needs the postgres/redis Services
     # (already synced in Phase 4, unrelated wave numbering) to resolve.
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: "4"
     # SkipDryRunOnMissingResource: same first-ever-sync CRD-then-CR ordering
     # concern as gitops/data/postgres/cluster.yaml — this Deployment
     # references a Secret produced by an ExternalSecret CR that may not

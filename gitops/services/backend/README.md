@@ -60,3 +60,73 @@ the full `docs/phases.md` Phase 5 exit gate ("Order placed end-to-end") is
 verified via `kubectl port-forward` against the frontend Service — see
 `gitops/services/README.md` and `gitops/services/frontend/service.yaml`'s
 comment for the port-forward command.
+
+## Verifying the Phase 6 exit gate ("Order event consumed from both systems")
+
+Placing one order must show up on BOTH RabbitMQ's task queue (consumed by
+`worker`) and Kafka's `order-events` log (consumed here with
+`kafka-console-consumer.sh`) — the actual Phase 6 exit gate
+(`docs/phases.md`). Run this only after `deployment.yaml`'s sync wave "4"
+(this file's comment) confirms backend itself is `Synced`/`Healthy`,
+meaning it authenticated to both brokers successfully.
+
+1. Confirm both messaging dependencies are healthy first:
+
+   ```sh
+   kubectl -n rabbitmq get pod -l app=rabbitmq
+   kubectl -n kafka get kafka kafka
+   # RabbitMQ pod: Running. Kafka CR STATUS: Ready.
+   ```
+
+2. Place an order through the backend (direct port-forward is simplest;
+   the full browser flow via frontend/BFF also works, see
+   `docs/runbooks/` if present):
+
+   ```sh
+   kubectl -n apps port-forward svc/backend 8080:8080 &
+   curl -s -X POST http://localhost:8080/orders \
+     -H 'Content-Type: application/json' \
+     -d '{"productId": 1, "quantity": 1}'
+   # {"id":<N>,"productId":1,"quantity":1,"totalCents":...}
+   ```
+
+3. Confirm the worker consumed the RabbitMQ task-queue message:
+
+   ```sh
+   kubectl -n apps logs deploy/worker --tail=20
+   # "order <N>: sending email + invoice (stub) ..." — see
+   # gitops/services/worker/README.md.
+   ```
+
+4. Confirm the event landed in Kafka's `order-events` topic. Read the
+   backend Kafka user's password from the same Secret Strimzi's User
+   Operator authenticates against
+   (`gitops/data/kafka/externalsecret.yaml`), then run a disposable
+   consumer pod using the exact Strimzi/Kafka version pinned in
+   `gitops/data/kafka/cluster.yaml` (`1.1.0-kafka-4.3.0` —
+   `strimzi-kafka-operator` chart version 1.1.0, Kafka 4.3.0) — command
+   shape confirmed against
+   https://strimzi.io/quickstarts/ (kafka-console-consumer.sh invocation)
+   and https://strimzi.io/docs/operators/latest/configuring.html
+   (SASL_PLAINTEXT + SCRAM-SHA-512 client config via `--consumer-property`):
+
+   ```sh
+   KAFKA_PASSWORD=$(kubectl -n kafka get secret kafka-app-credentials \
+     -o jsonpath='{.data.password}' | base64 -d)
+
+   kubectl -n kafka run kafka-consumer -ti --rm=true --restart=Never \
+     --image=quay.io/strimzi/kafka:1.1.0-kafka-4.3.0 -- \
+     bin/kafka-console-consumer.sh \
+     --bootstrap-server kafka-kafka-bootstrap:9092 \
+     --topic order-events \
+     --from-beginning \
+     --consumer-property security.protocol=SASL_PLAINTEXT \
+     --consumer-property sasl.mechanism=SCRAM-SHA-512 \
+     --consumer-property "sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=\"backend\" password=\"${KAFKA_PASSWORD}\";"
+   # {"type":"order.created","order":{"id":<N>,"productId":1,"quantity":1,"totalCents":...}}
+   ```
+
+   Ctrl+C to stop (the pod is `--rm`, so it cleans itself up). If nothing
+   prints, re-check step 1's Kafka health and `kubectl -n apps logs
+   deploy/backend` for a Kafka auth error — this is exactly the deadlock
+   this file's sync-wave "4" comment and `docs/adr/012` guard against.
