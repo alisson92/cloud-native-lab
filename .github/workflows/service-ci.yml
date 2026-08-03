@@ -141,7 +141,7 @@ jobs:
       # Overrides the workflow-level `packages: write` for this job only:
       # this job needs repo contents write (to push the bump branch) and
       # pull-requests write (to open/edit the PR), not registry access.
-      # Docs: https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/control-permissions-for-github_token
+      # Docs: https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/controlling-permissions-for-github_token
       contents: write
       pull-requests: write
     env:
@@ -151,8 +151,6 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
       - id: bump
         name: Bump image tag in gitops manifest
         run: |
