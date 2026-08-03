@@ -80,6 +80,13 @@
   `secret/data/rabbitmq` only via a distinct `worker-vault-auth` SA (see
   PR body: deviation from brief's literal `vault-auth` naming, for
   least-privilege). Key decision: ADR-011. Kafka is batch 2, untouched.
+- [review] (data-engineer) Batch 2/2: Kafka (Strimzi, KRaft), `order-events`
+  topic, backend publishes there via new `kafka.js`
+  (`@confluentinc/kafka-javascript` — kafkajs is unmaintained since 2023).
+  PR pending, branch `phase-6/kafka`, based on `phase-6/rabbitmq`.
+  `KafkaUser` credentialed from Vault (`secret/kafka`) via a pre-existing
+  Secret referenced in `spec.authentication.password.valueFrom` — brief's
+  hard requirement met, no fallback needed. Key decision: ADR-012.
 
 ## Phase 7 — Operations
 
