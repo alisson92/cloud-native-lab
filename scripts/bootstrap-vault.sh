@@ -187,9 +187,34 @@ vault_exec write auth/kubernetes/role/redis \
   ttl=1h
 
 # ---------------------------------------------------------------------------
-# backend (Phase 5): gitops/services/backend/README.md
-# Reuses the same secret/postgres + secret/redis KV data written above; only
-# adds a policy/role scoped to the `apps` namespace's `vault-auth` SA.
+# rabbitmq (Phase 6): gitops/data/rabbitmq/README.md
+# ---------------------------------------------------------------------------
+echo "==> rabbitmq: writing KV credentials (cached password, stable across reruns)..."
+RABBITMQ_PASSWORD="$(get_or_generate_password rabbitmq)"
+vault_exec kv put secret/rabbitmq \
+  username=app \
+  password="${RABBITMQ_PASSWORD}"
+
+echo "==> rabbitmq: writing rabbitmq-read policy..."
+vault_exec policy write rabbitmq-read - <<'EOF'
+path "secret/data/rabbitmq" {
+  capabilities = ["read"]
+}
+EOF
+
+echo "==> rabbitmq: writing rabbitmq role..."
+vault_exec write auth/kubernetes/role/rabbitmq \
+  bound_service_account_names=vault-auth \
+  bound_service_account_namespaces=rabbitmq \
+  audience=vault \
+  policies=rabbitmq-read \
+  ttl=1h
+
+# ---------------------------------------------------------------------------
+# backend (Phase 5, extended Phase 6): gitops/services/backend/README.md
+# Reuses the same secret/postgres + secret/redis + secret/rabbitmq KV data
+# written above; only adds a policy/role scoped to the `apps` namespace's
+# `vault-auth` SA.
 # ---------------------------------------------------------------------------
 echo "==> backend: writing backend-read policy..."
 vault_exec policy write backend-read - <<'EOF'
@@ -197,6 +222,9 @@ path "secret/data/postgres" {
   capabilities = ["read"]
 }
 path "secret/data/redis" {
+  capabilities = ["read"]
+}
+path "secret/data/rabbitmq" {
   capabilities = ["read"]
 }
 EOF
@@ -207,6 +235,32 @@ vault_exec write auth/kubernetes/role/backend \
   bound_service_account_namespaces=apps \
   audience=vault \
   policies=backend-read \
+  ttl=1h
+
+# ---------------------------------------------------------------------------
+# worker (Phase 6): gitops/services/worker/README.md
+# Least-privilege: worker only ever needs secret/rabbitmq (it consumes
+# order-created messages, it never touches Postgres/Redis directly). Bound
+# to its OWN ServiceAccount name "worker-vault-auth" (not backend's
+# "vault-auth"), even though both share the "apps" namespace — Vault's
+# Kubernetes auth binds a role to a (SA name, SA namespace) pair
+# (developer.hashicorp.com/vault/docs/auth/kubernetes), so reusing the same
+# SA name for both roles would let anything holding that one SA's token log
+# in as EITHER role, defeating the whole point of a narrower worker policy.
+# ---------------------------------------------------------------------------
+echo "==> worker: writing worker-read policy..."
+vault_exec policy write worker-read - <<'EOF'
+path "secret/data/rabbitmq" {
+  capabilities = ["read"]
+}
+EOF
+
+echo "==> worker: writing worker role..."
+vault_exec write auth/kubernetes/role/worker \
+  bound_service_account_names=worker-vault-auth \
+  bound_service_account_namespaces=apps \
+  audience=vault \
+  policies=worker-read \
   ttl=1h
 
 echo "==> Done. Verify with each directory's 'Verifying the exit gate' section."

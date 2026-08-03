@@ -1,0 +1,17 @@
+# Namespace for RabbitMQ (Phase 6, docs/phases.md), the task queue used by
+# the backend to hand off "order created" work to the worker (email/invoice)
+# — docs/vision.md: "RabbitMQ | Task queue: order created -> worker sends
+# email/invoice". Own namespace, same reasoning as postgres/redis in Phase 4
+# (gitops/data/postgres/namespace.yaml, gitops/data/redis/namespace.yaml):
+# a distinct data/trust domain from the `apps` application tier, not another
+# member of that cohesive HTTP call chain.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rabbitmq
+  annotations:
+    # Sync wave "1": applied after the external-secrets Application (wave
+    # "0") so ESO's CRDs already exist when secretstore.yaml/
+    # externalsecret.yaml in this directory sync.
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "1"

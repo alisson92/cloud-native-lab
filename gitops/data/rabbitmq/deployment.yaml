@@ -1,0 +1,106 @@
+# RabbitMQ: plain Deployment (not an operator or Helm chart) as the task
+# queue for "order created -> worker sends email/invoice"
+# (docs/vision.md). See docs/adr/011-rabbitmq-plain-deployment.md for the
+# operator-vs-Deployment trade-off — same reasoning as ADR-007 for Redis:
+# single-node, no HA/clustering requirement, official Docker guidance
+# treats a single container as the documented baseline.
+#
+# image: rabbitmq:4.3.4-alpine — pinned patch version (never `latest`, per
+# CLAUDE.md's mandatory alert triggers), Alpine variant to keep the image
+# small; confirmed as a currently published tag on Docker Hub's official
+# `rabbitmq` image (hub.docker.com/_/rabbitmq) in this session. Plain
+# (non-management) variant: this lab never uses the management HTTP
+# API/UI, only the AMQP protocol port (see service.yaml).
+#
+# RABBITMQ_DEFAULT_USER / RABBITMQ_DEFAULT_PASS: native RabbitMQ broker env
+# vars (not Docker-entrypoint-only — confirmed NOT in the docker-entrypoint
+# script's `deprecatedEnvVars` list at
+# https://github.com/docker-library/rabbitmq/blob/master/4.3/alpine/docker-entrypoint.sh),
+# documented at https://www.rabbitmq.com/docs/configure
+# ("Environment Variables Used by RabbitMQ" section) as "only meant to be
+# used in development and CI environments" — exactly this lab's use case.
+# They seed a user with full permissions on the default "/" vhost.
+#
+# No PersistentVolumeClaim: RabbitMQ's role here is transient work handoff
+# (order-created events waiting for the worker to send an email/invoice),
+# not a durable log — Kafka (Phase 6 batch 2) owns the durable/replayable
+# role (docs/architecture.md: "Kafka is an immutable event log"). The
+# cluster itself is ephemeral Kind (docs/adr/004); losing unconsumed queue
+# messages on a pod restart is an accepted trade-off for a lab task queue,
+# same posture as ADR-007's Redis cache trade-off.
+#
+# securityContext.runAsUser: 100 / runAsGroup: 101 — the `rabbitmq`
+# user/group baked into the Alpine variant of the official image
+# (docker-library/rabbitmq Dockerfile: `addgroup -g 101 -S rabbitmq;
+# adduser -u 100 -S -h "$RABBITMQ_DATA_DIR" -G rabbitmq rabbitmq`, source:
+# https://github.com/docker-library/rabbitmq/blob/master/4.3/alpine/Dockerfile).
+# The image has no default USER instruction (its docker-entrypoint.sh only
+# steps down from root via su-exec when started as uid 0), so setting these
+# explicitly makes the container run as `rabbitmq` directly and skips the
+# entrypoint's root-only chown step, which is unnecessary here since no PVC
+# is mounted (image build already chowns /var/lib/rabbitmq to
+# rabbitmq:rabbitmq).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+  namespace: rabbitmq
+  annotations:
+    # Sync wave "2": consumes the "rabbitmq-credentials" Secret produced by
+    # externalsecret.yaml (wave "1").
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:4.3.4-alpine
+          ports:
+            - containerPort: 5672
+              name: amqp
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: RABBITMQ_DEFAULT_USER
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: RABBITMQ_DEFAULT_PASS
+          # tcpSocket, not an exec/CLI probe: RabbitMQ's own Kubernetes
+          # guidance (https://www.rabbitmq.com/docs/monitoring, "Readiness
+          # Probes") states the Kubernetes Operator "configures a TCP port
+          # check on the AMQP port as the readinessProbe and defines no
+          # livenessProbe at all. This should be considered the best
+          # practice" — CLI diagnostic commands join the Erlang
+          # distribution and have a performance cost, and assume a fully
+          # booted node. Mirrored here even without the Operator.
+          readinessProbe:
+            tcpSocket:
+              port: 5672
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          # Requests/limits mandatory per docs/conventions.md. Sized for a
+          # small lab task queue with light traffic (one message per order
+          # placed), not production load. RabbitMQ's Erlang VM has a higher
+          # baseline memory footprint than Redis, hence the larger request.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 300m
+              memory: 512Mi
