@@ -211,10 +211,38 @@ vault_exec write auth/kubernetes/role/rabbitmq \
   ttl=1h
 
 # ---------------------------------------------------------------------------
+# kafka (Phase 6 batch 2): gitops/data/kafka/README.md
+# username="backend" MUST match gitops/data/kafka/user.yaml's KafkaUser
+# metadata.name — a KafkaUser's SASL username is always its own resource
+# name, so this is documentation-only here (same pattern as postgres's
+# owner match above), never read back by Strimzi itself.
+# ---------------------------------------------------------------------------
+echo "==> kafka: writing KV credentials (cached password, stable across reruns)..."
+KAFKA_PASSWORD="$(get_or_generate_password kafka)"
+vault_exec kv put secret/kafka \
+  username=backend \
+  password="${KAFKA_PASSWORD}"
+
+echo "==> kafka: writing kafka-read policy..."
+vault_exec policy write kafka-read - <<'EOF'
+path "secret/data/kafka" {
+  capabilities = ["read"]
+}
+EOF
+
+echo "==> kafka: writing kafka role..."
+vault_exec write auth/kubernetes/role/kafka \
+  bound_service_account_names=vault-auth \
+  bound_service_account_namespaces=kafka \
+  audience=vault \
+  policies=kafka-read \
+  ttl=1h
+
+# ---------------------------------------------------------------------------
 # backend (Phase 5, extended Phase 6): gitops/services/backend/README.md
-# Reuses the same secret/postgres + secret/redis + secret/rabbitmq KV data
-# written above; only adds a policy/role scoped to the `apps` namespace's
-# `vault-auth` SA.
+# Reuses the same secret/postgres + secret/redis + secret/rabbitmq +
+# secret/kafka KV data written above; only adds a policy/role scoped to the
+# `apps` namespace's `vault-auth` SA.
 # ---------------------------------------------------------------------------
 echo "==> backend: writing backend-read policy..."
 vault_exec policy write backend-read - <<'EOF'
@@ -225,6 +253,9 @@ path "secret/data/redis" {
   capabilities = ["read"]
 }
 path "secret/data/rabbitmq" {
+  capabilities = ["read"]
+}
+path "secret/data/kafka" {
   capabilities = ["read"]
 }
 EOF
