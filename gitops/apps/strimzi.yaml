@@ -1,0 +1,83 @@
+# Strimzi Cluster Operator, via the official Helm chart
+# (Phase 6, docs/architecture.md "Messaging" layer: "Kafka via Strimzi
+# operator second"). See docs/adr/012-kafka-strimzi-kraft-and-vault-user.md
+# for the KRaft-vs-ZooKeeper trade-off (moot: this Strimzi version dropped
+# ZooKeeper entirely) and the KafkaUser/Vault credentialing decision.
+#
+# Deployed into the same "kafka" namespace as the Kafka cluster CR itself
+# (gitops/data/kafka/), unlike CloudNativePG's operator (cnpg-system,
+# cluster-scoped, watches every namespace by default). Strimzi's own
+# default (no watchNamespaces/watchAnyNamespace set) is to watch ONLY its
+# own installation namespace — confirmed via
+# https://strimzi.io/docs/operators/latest/deploying.html
+# ("Deploying the Cluster Operator to watch multiple namespaces" section:
+# "the namespace where the Cluster Operator is deployed" is always
+# watched). This lab has exactly one Kafka cluster ever needed, so a
+# single shared namespace is simpler than CNPG's operator/data split —
+# docs/conventions.md: "simplest thing that works".
+#
+# Docs consulted:
+# - https://strimzi.io/docs/operators/latest/deploying.html
+#   (Helm chart install, default watched-namespace behavior)
+# - https://strimzi.io/charts/ (official Strimzi Helm chart repository,
+#   index.yaml confirms chart "strimzi-kafka-operator" version 1.1.0,
+#   appVersion 1.1.0, fetched live in this session)
+# - https://github.com/strimzi/strimzi-kafka-operator/blob/main/helm-charts/helm3/strimzi-kafka-operator/README.md
+#   (values.yaml: resources.requests/limits shape, defaultImageTag 1.1.0)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: strimzi
+  namespace: argocd
+  annotations:
+    # Sync wave "0": under root-app's recursive sync of gitops/apps/*, the
+    # operator (and its kafka.strimzi.io CRDs) must exist before
+    # gitops/data/kafka/'s Kafka/KafkaNodePool/KafkaTopic/KafkaUser CRs
+    # (wave "2"/"3") are applied.
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+
+  source:
+    repoURL: https://strimzi.io/charts/
+    chart: strimzi-kafka-operator
+    targetRevision: 1.1.0
+    helm:
+      valuesObject:
+        # Requests/limits mandatory per docs/conventions.md. The operator
+        # controller reconciles exactly one Kafka cluster CR in this lab,
+        # sized well below the chart's own default requests/limits
+        # (384Mi/1000m cpu limit) since there is no meaningful reconcile
+        # load here.
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kafka
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Namespace does not pre-exist; Argo CD creates it (documented sync
+      # option, not a manually kubectl-applied namespace). Same namespace
+      # gitops/data/kafka/namespace.yaml also targets — Argo CD's
+      # CreateNamespace is idempotent across the two Applications.
+      - CreateNamespace=true
+      # The kafka.strimzi.io CRDs (Kafka, KafkaNodePool, KafkaTopic,
+      # KafkaUser, ...) embed large OpenAPI schemas, the same class of
+      # issue documented in gitops/apps/cloudnativepg-operator.yaml for
+      # CNPG's CRDs: client-side apply's last-applied-configuration
+      # annotation can exceed the 256KiB Kubernetes annotation limit.
+      # Server-Side Apply avoids this by tracking field ownership
+      # server-side instead.
+      # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-options/#server-side-apply
+      - ServerSideApply=true

@@ -1,0 +1,65 @@
+# KafkaUser: SCRAM-SHA-512 credential for the backend's Kafka producer.
+#
+# metadata.name: "backend" — a KafkaUser's SASL username is ALWAYS its own
+# metadata.name (Strimzi has no separate "username" override field), so
+# this name is load-bearing: apps/backend/src/kafka.js authenticates as
+# username "backend", and scripts/bootstrap-vault.sh's "secret/kafka"
+# username value ("backend") is documentation-only, mirrored here for a
+# human to cross-check, same pattern as gitops/data/postgres/cluster.yaml's
+# bootstrap.initdb.owner needing to match Vault's "postgres" username.
+#
+# spec.authentication.password.valueFrom.secretKeyRef: this is the crux of
+# docs/adr/012-kafka-strimzi-kraft-and-vault-user.md's Vault-credentialing
+# decision — instead of letting the User Operator generate and own a
+# random password (its default behavior), it is told to read the password
+# from the PRE-EXISTING "kafka-app-credentials" Secret (produced by
+# externalsecret.yaml, sync-wave "1", well before this CR's wave "3"),
+# whose sole content source is Vault kv-v2 path "secret/kafka". Confirmed
+# field shape live in this session via
+# https://strimzi.io/docs/operators/latest/configuring.html
+# ("Assigning a password" / KafkaUserScramSha512ClientAuthentication ->
+# password -> valueFrom -> secretKeyRef -> name/key).
+#
+# authorization: simple ACLs scoped to exactly the "order-events" topic
+# this user needs to produce to — Describe (required to look up topic
+# metadata before producing) and Write (produce). No Create: the topic
+# already exists via topic.yaml, and the backend's producer must never be
+# allowed to auto-create arbitrary topics (least privilege).
+#
+# Docs consulted:
+# - https://strimzi.io/docs/operators/latest/configuring.html
+#   (KafkaUser spec.authentication scram-sha-512 with a predefined
+#   password; spec.authorization simple ACLs)
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: backend
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+  annotations:
+    # Sync wave "3": after the Kafka cluster (wave "2") — the User Operator
+    # that reconciles this CR runs as part of the Kafka CR's
+    # entityOperator. Also after externalsecret.yaml (wave "1"), so the
+    # "kafka-app-credentials" Secret this CR references already exists.
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  authentication:
+    type: scram-sha-512
+    password:
+      valueFrom:
+        secretKeyRef:
+          name: kafka-app-credentials
+          key: password
+  authorization:
+    type: simple
+    acls:
+      - resource:
+          type: topic
+          name: order-events
+          patternType: literal
+        operations:
+          - Describe
+          - Write

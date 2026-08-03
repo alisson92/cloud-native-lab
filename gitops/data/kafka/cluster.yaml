@@ -1,0 +1,134 @@
+# Kafka cluster: single-node, KRaft mode (no ZooKeeper — Strimzi 1.1.0
+# supports only KRaft; see docs/adr/012-kafka-strimzi-kraft-and-vault-user.md).
+# This is the "immutable event log" for order-lifecycle events
+# (docs/vision.md: "Kafka | Immutable event log: order lifecycle events for
+# many consumers"), a distinct role from RabbitMQ's task queue
+# (gitops/data/rabbitmq/) — docs/architecture.md: "do not blur them".
+#
+# One KafkaNodePool with both "controller" and "broker" roles ("dual-role"):
+# the smallest valid KRaft topology, matching Strimzi's own single-node
+# example verbatim in shape
+# (https://github.com/strimzi/strimzi-kafka-operator/blob/main/examples/kafka/kafka-single-node.yaml,
+# fetched live in this session). No HA (docs/vision.md non-goal), this is
+# an ephemeral lab (ADR-004).
+#
+# storage: persistent-claim, 2Gi — small, cost-disciplined size for a lab
+# workload (vs. the upstream example's 100Gi production default); no
+# storageClassName, so the cluster's default StorageClass is used (Kind's
+# local-path-provisioner), same convention as gitops/data/postgres/
+# cluster.yaml. kraftMetadata: shared — required on the single volume of a
+# combined controller+broker node pool (the KRaft metadata log must live on
+# one of the node's own volumes).
+#
+# version/metadataVersion: 4.3.0 / 4.3-IV0 — the exact pairing from
+# Strimzi's own bundled example above, confirmed compatible with this
+# operator release; never hand-picked without that source.
+#
+# replication-factor config (all =1): required because this cluster has
+# exactly one broker — Kafka's cluster-wide defaults (replication factor 3)
+# would leave internal topics (offsets, transaction state) permanently
+# under-replicated and unable to reach their min ISR. Same reasoning as
+# the upstream single-node example.
+#
+# listeners: one internal, unencrypted (tls: false) listener with
+# SASL/SCRAM-SHA-512 authentication. No TLS: every other in-cluster service
+# in this lab (Postgres, Redis, RabbitMQ) is also plaintext-internal,
+# trusting the cluster network boundary — consistent posture, not a new
+# exception. tls:false + authentication.type: scram-sha-512 is documented
+# as SASL_PLAINTEXT (password never sent in the clear; SCRAM is a
+# challenge-response mechanism) at
+# https://strimzi.io/docs/operators/latest/configuring.html
+# (GenericKafkaListener authentication types).
+#
+# entityOperator: topicOperator/userOperator reconcile this directory's
+# KafkaTopic/KafkaUser CRs; resources sized like the CNPG operator's own
+# low-traffic reconciler (gitops/apps/cloudnativepg-operator.yaml) — a
+# single topic and a single user in this lab.
+#
+# Docs consulted:
+# - https://strimzi.io/docs/operators/latest/configuring.html
+#   (Kafka CR: spec.kafka.listeners/config/version/metadataVersion,
+#   KafkaNodePool: spec.roles/storage/resources, EntityOperator:
+#   topicOperator.resources/userOperator.resources)
+# - https://github.com/strimzi/strimzi-kafka-operator/blob/main/examples/kafka/kafka-single-node.yaml
+#   (authoritative single-node KRaft shape, fetched live in this session)
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: dual-role
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+  annotations:
+    # Sync wave "2": after the operator/CRDs (wave "0", gitops/apps/
+    # strimzi.yaml) and this namespace (wave "1").
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  replicas: 1
+  roles:
+    - controller
+    - broker
+  storage:
+    type: jbod
+    volumes:
+      - id: 0
+        type: persistent-claim
+        size: 2Gi
+        kraftMetadata: shared
+  # Requests/limits mandatory per docs/conventions.md. Kafka's JVM has a
+  # heavier baseline footprint than Postgres/Redis/RabbitMQ, but this is a
+  # single small broker handling one lightweight event type in a lab, not
+  # production throughput.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+---
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: kafka
+  namespace: kafka
+  annotations:
+    # Sync wave "2": see the KafkaNodePool above for rationale.
+    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  kafka:
+    version: 4.3.0
+    metadataVersion: 4.3-IV0
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+        authentication:
+          type: scram-sha-512
+    config:
+      offsets.topic.replication.factor: 1
+      transaction.state.log.replication.factor: 1
+      transaction.state.log.min.isr: 1
+      default.replication.factor: 1
+      min.insync.replicas: 1
+  entityOperator:
+    topicOperator:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+    userOperator:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
