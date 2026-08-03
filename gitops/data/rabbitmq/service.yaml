@@ -1,0 +1,23 @@
+# ClusterIP Service exposing RabbitMQ's AMQP port in-cluster only — only the
+# backend (publisher) and worker (consumer) services, both in the `apps`
+# namespace, connect to it. No management UI plugin/port: this lab never
+# needs the RabbitMQ management HTTP API/UI, and the plain (non-management)
+# image below doesn't ship it — adding the port here without the plugin
+# would be dead configuration (docs/conventions.md: "Delete code and config
+# that is not used").
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: rabbitmq
+  annotations:
+    # Sync wave "2": grouped with deployment.yaml (both target the same
+    # workload rollout).
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: 5672
