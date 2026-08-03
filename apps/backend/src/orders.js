@@ -1,9 +1,15 @@
 // Order creation/lookup. Price is looked up server-side from `products` —
-// clients never dictate price. RabbitMQ/Kafka publishing on order creation
-// is explicit Phase 6 scope (see docs/phases.md); nothing is stubbed here.
+// clients never dictate price. RabbitMQ publishing (Phase 6, docs/phases.md)
+// happens here, after the Postgres transaction commits: the order write is
+// the source of truth (docs/vision.md: "PostgreSQL | Transactional store for
+// orders"), the queue message is a best-effort side effect notifying the
+// worker to send an email/invoice. Kafka publishing (Phase 6 batch 2, a
+// separate immutable-event-log role) is still out of scope for this file.
 'use strict';
 
-async function createOrder(pgPool, { productId, quantity } = {}) {
+const { publishOrderCreated } = require('./rabbitmq');
+
+async function createOrder(pgPool, { productId, quantity } = {}, rabbitmqChannel = null) {
   if (!productId || !quantity || quantity <= 0) {
     const err = new Error('productId and a positive quantity are required');
     err.statusCode = 400;
@@ -30,7 +36,22 @@ async function createOrder(pgPool, { productId, quantity } = {}) {
     );
 
     await client.query('COMMIT');
-    return { id: insert.rows[0].id, productId, quantity, totalCents };
+    const order = { id: insert.rows[0].id, productId, quantity, totalCents };
+
+    // Publish only after COMMIT succeeds — never notify the worker about an
+    // order that didn't actually persist. A publish failure must not fail
+    // the HTTP response: the order is already durably written to Postgres,
+    // and losing a best-effort email/invoice notification is an accepted
+    // trade-off for this lab (see docs/adr/011-rabbitmq-plain-deployment.md).
+    if (rabbitmqChannel) {
+      try {
+        publishOrderCreated(rabbitmqChannel, order);
+      } catch (err) {
+        console.error('failed to publish order-created message', err);
+      }
+    }
+
+    return order;
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

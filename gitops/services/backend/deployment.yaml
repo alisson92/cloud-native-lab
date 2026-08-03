@@ -10,7 +10,11 @@
 # via `docker pull ghcr.io/alisson92/backend:ed1a6ca9...`. Tags are
 # immutable per commit (service-ci.yml's `env.IMAGE` uses `github.sha`), so
 # this must be bumped by hand to a new sha each time a future change to
-# apps/backend/ merges to main and CI pushes a new image.
+# apps/backend/ merges to main and CI pushes a new image. NOTE (Phase 6):
+# this PR changes apps/backend/ (rabbitmq.js, new amqplib dependency) but
+# cannot know the merge commit's sha in advance — bumping this tag to the
+# image CI actually pushes for this change is a required follow-up once
+# this PR is merged, same pattern as Phase 5's post-merge tag-bump fix.
 #
 # POSTGRES_HOST: CloudNativePG auto-creates a read-write Service named
 # "<cluster-name>-rw" in the Cluster's namespace
@@ -22,6 +26,10 @@
 #
 # REDIS_HOST: confirmed against gitops/data/redis/service.yaml
 # (metadata.name: redis, namespace: redis) -> "redis.redis.svc.cluster.local".
+#
+# RABBITMQ_HOST (Phase 6): confirmed against gitops/data/rabbitmq/
+# service.yaml (metadata.name: rabbitmq, namespace: rabbitmq) ->
+# "rabbitmq.rabbitmq.svc.cluster.local".
 #
 # POSTGRES_DB: "orders", matching gitops/data/postgres/cluster.yaml's
 # spec.bootstrap.initdb.database.
@@ -99,6 +107,20 @@ spec:
                 secretKeyRef:
                   name: backend-credentials
                   key: REDIS_PASSWORD
+            - name: RABBITMQ_HOST
+              value: "rabbitmq.rabbitmq.svc.cluster.local"
+            - name: RABBITMQ_PORT
+              value: "5672"
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: backend-credentials
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backend-credentials
+                  key: RABBITMQ_PASSWORD
           readinessProbe:
             httpGet:
               path: /health

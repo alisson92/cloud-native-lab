@@ -64,3 +64,36 @@ test('getOrder returns null when the order does not exist', async () => {
 
   assert.equal(result, null);
 });
+
+test('createOrder publishes an order-created message after commit', async () => {
+  const client = fakeClient([{ price_cents: 500 }]);
+  const pool = { connect: async () => client };
+  const published = [];
+  const fakeChannel = {
+    sendToQueue: (queue, payload, opts) => {
+      published.push({ queue, payload: JSON.parse(payload.toString()), opts });
+    },
+  };
+
+  const order = await createOrder(pool, { productId: 1, quantity: 2 }, fakeChannel);
+
+  assert.equal(published.length, 1);
+  assert.equal(published[0].queue, 'orders.created');
+  assert.deepEqual(published[0].payload, order);
+  assert.equal(published[0].opts.persistent, true);
+});
+
+test('createOrder does not fail the request if publishing fails', async () => {
+  const client = fakeClient([{ price_cents: 500 }]);
+  const pool = { connect: async () => client };
+  const fakeChannel = {
+    sendToQueue: () => {
+      throw new Error('broker unreachable');
+    },
+  };
+
+  const order = await createOrder(pool, { productId: 1, quantity: 1 }, fakeChannel);
+
+  assert.equal(order.totalCents, 500);
+  assert.ok(client.queries.some((q) => q.sql === 'COMMIT'));
+});
