@@ -56,6 +56,20 @@ resource sizing). Start there:
   scoped to RabbitMQ credentials only, no Service (no HTTP surface to
   expose), no Namespace. See `worker/README.md`.
 
+## Image tags are bumped automatically by CI, then merged by a human
+
+Each `deployment.yaml`'s `image:` tag pins the exact `github.sha` of the
+`main` commit whose CI push job built and pushed that image (tags are
+immutable per commit, see `.github/workflows/service-ci.yml`). If you see a
+PR titled `chore(gitops): bump <service> image to <sha>` appear on its own
+after a merge to `main` touches `apps/<service>/`, that is not a mistake or
+an unauthorized commit — it is the `bump-gitops` job in `service-ci.yml`,
+which opens (or updates, in place, on the same `ci/bump-<service>-image`
+branch) exactly this PR once the new image finishes pushing to GHCR. See
+`docs/adr/013-automated-gitops-image-bump-pr.md` for the full reasoning.
+The job never merges the PR itself — CLAUDE.md's human merge gate for the
+Argo CD-watched branch still applies, same as any other PR.
+
 ## Verifying the Phase 5 exit gate
 
 Per `docs/phases.md`: "Order placed end-to-end (sync path, no messaging
