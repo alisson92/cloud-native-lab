@@ -83,6 +83,24 @@
 - No `kubectl apply`, `kubectl edit`, or `helm install` by hand against the
   cluster. Read-only `kubectl` (get/describe/logs) is allowed for diagnosis.
 - Resource requests/limits set for every workload (cost discipline).
+- **`root-app.yaml` sync-policy/prune-scope changes require a pre-merge
+  diff check.** Any change touching `gitops/root-app.yaml`'s
+  `syncPolicy` (`automated.prune`, `automated.selfHeal`) or
+  `spec.source.directory` (`recurse`, `exclude`) must be verified against
+  the live cluster *before* merging with `argocd app diff root-app
+  --local=gitops` (run from the repo root; diffs the live `root-app`
+  against the branch's local `gitops/` tree, including its managed
+  resource list) or, if the Argo CD CLI isn't available, `kubectl diff -f
+  gitops/root-app.yaml`. The specific failure
+  this catches: removing a resource that `prune: true` is already tracking
+  self-deletes it on the next automated sync — see
+  `docs/adr/014-exclude-root-app-from-self-recursion.md`'s Consequences
+  for the incident this rule exists because of.
+  (`argocd app diff` reference:
+  https://argo-cd.readthedocs.io/en/stable/user-guide/commands/argocd_app_diff/
+  — `--local` takes a local manifest path and diffs it against the live
+  app; combine with `--local-repo-root` if the repo root and `--local`
+  path differ.)
 
 ## Documentation
 

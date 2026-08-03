@@ -176,6 +176,23 @@
   documenting both, cross-referencing ADR-015. Docs-only, no manifest
   change. Branch `phase-6/adr-012-authorization-addendum`.
 
+## Phase 6 fix (owner: gitops-engineer) — not phase-gating
+
+- (gitops-engineer) Reviewer follow-up on PR #29: `root-app` already had
+  `syncPolicy.automated.prune: true` and was already self-tracking
+  `Application/argocd/root-app` when the `directory.exclude` fix merged —
+  the very next auto-sync pruned root-app's own `Application` object
+  (no cascade: no finalizer, all workloads stayed `Running`). Human
+  recreated via `kubectl apply -f gitops/root-app.yaml`; confirmed
+  `Synced`/`Healthy`, no longer self-tracking. ADR-014 Consequences
+  corrected. Added a `docs/conventions.md` rule: `root-app.yaml`
+  syncPolicy/directory changes need `argocd app diff --local` (or
+  `kubectl diff`) before merge. `terraform/delivery` state was stale
+  (missing the `exclude` field the human applied by hand) — `plan` shows
+  a safe 1-attribute in-place update, no destroy/recreate; human should
+  run `terraform apply` to reconcile state, no drift otherwise. Branch
+  `phase-6/fix-root-app-self-prune-followup`.
+
 ## Phase 7 — Operations
 
 - [todo] To be broken down by the orchestrator when Phase 6 gate passes.
