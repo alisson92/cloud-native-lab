@@ -8,12 +8,22 @@
 # Namespace "apps" already created by gitops/services/backend/namespace.yaml
 # — see that file's comment and gitops/services/README.md.
 #
-# image tag: pinned to the github.sha of the main commit whose CI push
-# job actually ran end-to-end (PR #16 merge). NOTE (Phase 6): this PR
-# changes apps/worker/ (real RabbitMQ consumer, new amqplib dependency) but
-# cannot know the merge commit's sha in advance — bumping this tag to the
-# image CI actually pushes for this change is a required follow-up once
-# this PR is merged, same pattern as Phase 5's post-merge tag-bump fix.
+# image tag: pinned to the github.sha of the `main` commit
+# 11d7e0342d0ff67af5b1a3459ea1ef062ad54c2e — the worker-ci push build
+# (2026-08-03T13:45:45Z, run confirmed via `gh run list --workflow=worker-ci`,
+# conclusion success, event push, branch main) that includes the real
+# RabbitMQ consumer (apps/worker/src/rabbitmq.js, commit bd0f0d6, PR #23),
+# replacing the Phase-5 heartbeat scaffold. This is a one-time manual
+# backfill: the `bump-gitops` CI automation (ADR-013, PR #25) that now bumps
+# this tag automatically on every push did not exist yet when this build ran,
+# so the tag was left stale at the pre-Phase-6 sha (ed1a6ca9...), and the
+# cluster kept running the old heartbeat-loop image until this fix —
+# confirmed live via
+# `docker pull ghcr.io/alisson92/worker:11d7e0342d0ff67af5b1a3459ea1ef062ad54c2e`
+# (digest sha256:15758276536614a1a4b3dcc155366a75b68435fcf65e8a0a7f6edce7c1c4b190).
+# Tags are immutable per commit (service-ci.yml's `env.IMAGE` uses
+# `github.sha`); from this point on, `bump-gitops` (PR #25) handles future
+# bumps automatically — no more manual backfills expected.
 #
 # RABBITMQ_HOST/PORT: same Service DNS name as gitops/services/backend/
 # deployment.yaml's RABBITMQ_HOST comment (gitops/data/rabbitmq/
@@ -67,7 +77,7 @@ spec:
         runAsGroup: 1000
       containers:
         - name: worker
-          image: ghcr.io/alisson92/worker:ed1a6ca9210717a06bc79ebe83bce8ea8e93cbf6
+          image: ghcr.io/alisson92/worker:11d7e0342d0ff67af5b1a3459ea1ef062ad54c2e
           env:
             - name: RABBITMQ_HOST
               value: "rabbitmq.rabbitmq.svc.cluster.local"
