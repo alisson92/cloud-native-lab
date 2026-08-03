@@ -155,6 +155,18 @@
   `directory.exclude`, matching Argo CD's official app-of-apps example.
   ADR-014. PR #29, branch `phase-6/exclude-root-app-self-reference`.
 
+## Phase 6 fix (owner: data-engineer) — not phase-gating
+
+- (data-engineer) PR #28's `authorization: simple` fix left no Kafka
+  identity able to read `order-events` (`backend` is producer-only by
+  design). Added read-only `KafkaUser` "gate-verifier"
+  (`gitops/data/kafka/gate-verifier-user.yaml`): `Describe`+`Read` on
+  `order-events`, `Read` on its own fixed consumer group. Strimzi-generated
+  password (not Vault-sourced — debug-only identity, no consuming
+  workload; `scripts/bootstrap-vault.sh` untouched, no human re-run
+  needed). ADR-015. Updated `gitops/data/kafka/README.md` and
+  `gitops/services/backend/README.md`'s now-stale consume example.
+
 ## Phase 7 — Operations
 
 - [todo] To be broken down by the orchestrator when Phase 6 gate passes.

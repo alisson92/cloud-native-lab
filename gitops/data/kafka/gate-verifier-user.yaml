@@ -1,0 +1,75 @@
+# KafkaUser: throwaway, read-only identity used ONLY to manually verify the
+# Phase 6 exit gate ("Order event consumed from both systems",
+# docs/phases.md) via ad-hoc `kubectl run ... kafka-console-consumer.sh`
+# from a human/agent shell. No workload in gitops/ authenticates as this
+# user — it exists purely for CLI verification until Phase 7's real
+# consumer (the Airflow ETL, per docs/vision.md and this directory's
+# README) lands. See docs/adr/015-kafka-gate-verifier-user.md for why this
+# is NOT Vault-sourced like user.yaml's "backend" KafkaUser.
+#
+# spec.authentication: scram-sha-512 with NO password field. Per Strimzi's
+# own docs (https://strimzi.io/docs/operators/latest/configuring.html,
+# "Managing users" / KafkaUserScramSha512ClientAuthentication -> password),
+# omitting `password` makes the User Operator generate and OWN a random
+# password itself, stored in a Secret it creates and manages named after
+# this CR ("gate-verifier"), keys "password" and "sasl.jaas.config" —
+# confirmed against the same doc page used for user.yaml's opposite case
+# (pre-existing Secret via valueFrom). This is the intentional exception:
+# a debug-only identity with no consuming workload has nothing to gain
+# from Vault-sourcing, and every Vault-sourced credential in this repo
+# adds one more block to scripts/bootstrap-vault.sh and one more thing a
+# human must re-run after a Vault dev-mode restart (docs/adr/010) — not
+# worth it for CLI-only verification.
+#
+# spec.authorization: simple ACLs, least-privilege, read-only:
+# - topic "order-events": Describe (to look up topic/partition metadata
+#   before fetching, same requirement as user.yaml's producer-side
+#   Describe) and Read (to fetch messages). No Write, no Create/Delete.
+# - group "gate-verifier": Read only, and scoped to this ONE fixed,
+#   literal-pattern consumer group id — never a wildcard/prefixed pattern,
+#   which would let this identity join or inspect arbitrary consumer
+#   groups (defeats least privilege). A consumer must have Read on the
+#   specific group it joins/commits offsets to, distinct from Read on the
+#   topic itself (Kafka authorizes topic and group resources separately;
+#   this is the same two-resource ACL shape Strimzi's own
+#   AclRuleTopicResource / AclRuleGroupResource schemas expose).
+#
+# Docs consulted:
+# - https://strimzi.io/docs/operators/latest/configuring.html
+#   (KafkaUser spec.authentication scram-sha-512 default-generated-Secret
+#   behavior when password is omitted; spec.authorization simple ACLs;
+#   AclRule / AclRuleTopicResource / AclRuleGroupResource schema
+#   references, resource "type: group")
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: gate-verifier
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+  annotations:
+    # Sync wave "3": same wave as user.yaml's "backend" KafkaUser — both
+    # are reconciled by the same User Operator, which only exists once the
+    # Kafka cluster (wave "2") is up.
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  authentication:
+    type: scram-sha-512
+  authorization:
+    type: simple
+    acls:
+      - resource:
+          type: topic
+          name: order-events
+          patternType: literal
+        operations:
+          - Describe
+          - Read
+      - resource:
+          type: group
+          name: gate-verifier
+          patternType: literal
+        operations:
+          - Read
