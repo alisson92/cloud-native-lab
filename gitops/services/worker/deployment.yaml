@@ -1,17 +1,23 @@
-# Worker: Phase 6 (docs/phases.md) replaces this heartbeat loop with a
-# RabbitMQ consumer; no Service exists because this placeholder has no
-# network surface to expose. Source at apps/worker/ (Phase 5, PR #14) —
-# apps/worker/src/index.js writes /tmp/ready on startup and loops a
-# heartbeat, nothing listens on any port. No Postgres/Redis/Vault
-# credentials needed yet, hence no SecretStore/ExternalSecret/
-# ServiceAccount in this directory (see gitops/services/README.md). See
-# also this directory's own README.md.
+# Worker: Phase 6 (docs/phases.md) replaces the Phase 5 heartbeat loop with
+# a real RabbitMQ consumer (apps/worker/src/rabbitmq.js,
+# apps/worker/src/index.js) that consumes "orders.created" messages
+# published by the backend (gitops/data/rabbitmq/) and logs a stubbed
+# email/invoice action — no Service still, this workload has no HTTP
+# surface to expose either way. See also this directory's own README.md.
 #
 # Namespace "apps" already created by gitops/services/backend/namespace.yaml
 # — see that file's comment and gitops/services/README.md.
 #
 # image tag: pinned to the github.sha of the main commit whose CI push
-# job actually ran end-to-end (PR #16 merge). See that file's comment.
+# job actually ran end-to-end (PR #16 merge). NOTE (Phase 6): this PR
+# changes apps/worker/ (real RabbitMQ consumer, new amqplib dependency) but
+# cannot know the merge commit's sha in advance — bumping this tag to the
+# image CI actually pushes for this change is a required follow-up once
+# this PR is merged, same pattern as Phase 5's post-merge tag-bump fix.
+#
+# RABBITMQ_HOST/PORT: same Service DNS name as gitops/services/backend/
+# deployment.yaml's RABBITMQ_HOST comment (gitops/data/rabbitmq/
+# service.yaml -> "rabbitmq.rabbitmq.svc.cluster.local").
 #
 # No containerPort: nothing listens (apps/worker/Dockerfile has no EXPOSE
 # either), so none is declared here — an unused containerPort would be
@@ -19,7 +25,10 @@
 #
 # readinessProbe: exec `cat /tmp/ready`, mirroring the exact pattern already
 # used by gitops/secrets-demo/deployment.yaml (same probe shape/timing) for
-# a workload with no HTTP surface to probe.
+# a workload with no HTTP surface to probe. apps/worker/src/index.js now
+# only writes /tmp/ready after the RabbitMQ connection/consumer is actually
+# established, so this probe reflects real readiness to consume, not just
+# process startup.
 #
 # securityContext.runAsUser/runAsGroup: 1000 — same official node image
 # "node" user, see gitops/services/backend/deployment.yaml's comment for the
@@ -30,9 +39,18 @@ metadata:
   name: worker
   namespace: apps
   annotations:
-    # Sync wave "2": after the "apps" Namespace (wave "1"); grouped with the
-    # other three services which also land in wave "2".
+    # Sync wave "2": after the "apps" Namespace (wave "1") and after
+    # externalsecret.yaml in this directory (also wave "1", produces the
+    # "worker-credentials" Secret this Deployment now consumes); grouped
+    # with the other three services which also land in wave "2".
     argocd.argoproj.io/sync-wave: "2"
+    # SkipDryRunOnMissingResource: same first-ever-sync CRD-then-CR ordering
+    # concern as gitops/services/backend/deployment.yaml — this Deployment
+    # references a Secret produced by an ExternalSecret CR that may not
+    # exist yet at initial dry-run time.
+    # Docs: https://argo-cd.readthedocs.io/en/stable/user-guide/sync-options/
+    # (section: "Skip Dry Run for new custom resources types")
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   replicas: 1
   selector:
@@ -50,14 +68,30 @@ spec:
       containers:
         - name: worker
           image: ghcr.io/alisson92/worker:ed1a6ca9210717a06bc79ebe83bce8ea8e93cbf6
+          env:
+            - name: RABBITMQ_HOST
+              value: "rabbitmq.rabbitmq.svc.cluster.local"
+            - name: RABBITMQ_PORT
+              value: "5672"
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: worker-credentials
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: worker-credentials
+                  key: RABBITMQ_PASSWORD
           readinessProbe:
             exec:
               command: ["cat", "/tmp/ready"]
             initialDelaySeconds: 2
             periodSeconds: 5
           # Requests/limits mandatory per docs/conventions.md. Smallest of
-          # the four: a placeholder heartbeat loop with no I/O, no HTTP
-          # server, no DB/cache/queue client yet.
+          # the four: one long-lived AMQP connection/channel, no HTTP
+          # server, no Postgres/Redis client, light per-message CPU (a
+          # stubbed log line, not real email/PDF rendering).
           resources:
             requests:
               cpu: 50m

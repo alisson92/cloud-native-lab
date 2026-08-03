@@ -23,16 +23,21 @@ abstraction"). All four therefore share the `apps` Namespace, created once in
 these four directories — `bff`, `frontend`, and `worker` rely on it already
 existing via Argo CD's sync-wave ordering).
 
-## Only backend has Vault/SecretStore/ExternalSecret wiring
+## Vault/SecretStore/ExternalSecret wiring: backend and worker only
 
-Of the four services, only backend holds credentials that must come from
-Vault (Postgres and Redis passwords). BFF is a pure HTTP proxy to backend;
-frontend is a pure HTTP proxy to BFF plus a static file server; worker (this
-phase) is a placeholder heartbeat loop with no external connections at all.
-None of the three have any secret to fetch, so none of them get a
-SecretStore/ExternalSecret/ServiceAccount — adding empty Vault wiring "for
-consistency" would be dead configuration, which `docs/conventions.md`
-explicitly calls a defect ("Delete code and config that is not used").
+Of the four services, backend and worker hold credentials that must come
+from Vault. Backend reads Postgres, Redis, and (Phase 6) RabbitMQ
+credentials. Worker (Phase 6, replacing the Phase 5 placeholder heartbeat
+loop) reads only RabbitMQ credentials, via its OWN ServiceAccount/
+SecretStore/role scoped to just `secret/data/rabbitmq` — see
+`worker/serviceaccount.yaml`'s comment for why it cannot reuse backend's
+`vault-auth` ServiceAccount name and still keep that scoping meaningful.
+BFF is a pure HTTP proxy to backend; frontend is a pure HTTP proxy to BFF
+plus a static file server — neither has any secret to fetch, so neither
+gets a SecretStore/ExternalSecret/ServiceAccount — adding empty Vault
+wiring "for consistency" would be dead configuration, which
+`docs/conventions.md` explicitly calls a defect ("Delete code and config
+that is not used").
 
 ## Per-service specifics
 
@@ -40,15 +45,16 @@ Each service's own manifests carry inline comments with the specific
 reasoning (image tag placeholder, Service DNS names, security context,
 resource sizing). Start there:
 
-- `backend/` — Deployment, Service, Namespace, and full Vault wiring.
+- `backend/` — Deployment, Service, Namespace, and full Vault wiring
+  (Postgres, Redis, and Phase 6 RabbitMQ credentials).
 - `bff/` — Deployment, Service. No Vault wiring, no Namespace (reuses
   `apps` from `backend/namespace.yaml`).
 - `frontend/` — Deployment, Service (reached via `kubectl port-forward` for
   the Phase 5 exit gate, no Ingress/NodePort). No Vault wiring, no
   Namespace.
-- `worker/` — Deployment only, no Service (no HTTP surface to expose), no
-  Vault wiring, no Namespace. See `worker/README.md`: this is a Phase 6
-  placeholder.
+- `worker/` — Deployment, own ServiceAccount/SecretStore/ExternalSecret
+  scoped to RabbitMQ credentials only, no Service (no HTTP surface to
+  expose), no Namespace. See `worker/README.md`.
 
 ## Verifying the Phase 5 exit gate
 

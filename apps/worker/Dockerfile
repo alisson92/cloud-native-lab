@@ -1,8 +1,8 @@
-# Multi-stage build per https://docs.docker.com/build/building/multi-stage/.
-# This service has zero runtime dependencies today (plain Node.js process),
-# so `npm ci --omit=dev` produces no node_modules to carry into the runtime
-# stage. The two-stage shape is kept anyway for consistency with the other
-# three services and to make the Phase 6 RabbitMQ addition a drop-in change.
+# Multi-stage build per https://docs.docker.com/build/building/multi-stage/:
+# the "build" stage installs dependencies, the "runtime" stage copies only
+# what's needed to run. Phase 6 (docs/phases.md) adds amqplib as this
+# service's first runtime dependency, so node_modules is now copied into
+# the runtime stage — same shape as apps/backend/Dockerfile.
 FROM node:22.23.2-alpine3.24 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -11,6 +11,7 @@ COPY src ./src
 
 FROM node:22.23.2-alpine3.24 AS runtime
 WORKDIR /app
+COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/src ./src
 

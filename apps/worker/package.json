@@ -2,7 +2,7 @@
   "name": "worker",
   "version": "1.0.0",
   "private": true,
-  "description": "Placeholder background worker — RabbitMQ consumer arrives in Phase 6",
+  "description": "Background worker: consumes RabbitMQ order-created messages, sends email/invoice (stubbed)",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
@@ -11,5 +11,8 @@
   "engines": {
     "node": ">=22"
   },
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "dependencies": {
+    "amqplib": "^2.0.1"
+  }
 }
