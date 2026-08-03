@@ -38,6 +38,19 @@ spec:
     path: gitops
     directory:
       recurse: true
+      # Exclude this file itself: without it, root-app ends up tracking
+      # `Application/argocd/root-app` as one of its own ~49 managed
+      # resources (confirmed live via `kubectl -n argocd get application
+      # root-app -o json`, .status.resources[]). The official app-of-apps
+      # worked example never stores the root Application's own manifest
+      # inside the directory it recurses into (its root app is applied via
+      # `kubectl apply`/CLI from outside `apps/`, not shipped alongside the
+      # child Application templates) — see "Cluster Bootstrapping":
+      # https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/
+      # `directory.exclude` is a documented Directory-source field:
+      # https://argo-cd.readthedocs.io/en/stable/user-guide/application-specification/
+      # See docs/adr/014-exclude-root-app-from-self-recursion.md.
+      exclude: 'root-app.yaml'
 
   destination:
     # The local cluster Argo CD itself runs on — true for Kind now and for

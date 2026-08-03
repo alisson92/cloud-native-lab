@@ -141,6 +141,20 @@
   #12913). Validated via `kubectl explain` against the live CRD. PR #28,
   branch `phase-6/fix-kafka-authorization`.
 
+## Phase 6 fix (owner: gitops-engineer) — not phase-gating
+
+- (gitops-engineer) Diagnosed live `root-app` `Synced`/`Degraded`: NOT a
+  sync/cache artifact (manual `argocd app sync root-app --core` confirmed
+  no change). Real cause: Vault dev-mode `vault-0` pod restarted (node
+  restart), wiping its Kubernetes auth method (in-mem storage) — 8
+  ExternalSecret/SecretStore resources genuinely Degraded (403 on Vault
+  login), correctly rolled up. **Needs `scripts/bootstrap-vault.sh` re-run
+  (security-engineer/human) — outside this agent's scope, not done here.**
+  Separately fixed (unrelated, doesn't affect the incident): `root-app.yaml`
+  was tracking itself via `directory.recurse` — excluded via
+  `directory.exclude`, matching Argo CD's official app-of-apps example.
+  ADR-014. PR #29, branch `phase-6/exclude-root-app-self-reference`.
+
 ## Phase 7 — Operations
 
 - [todo] To be broken down by the orchestrator when Phase 6 gate passes.
