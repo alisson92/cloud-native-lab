@@ -46,9 +46,35 @@ without changing `recurse: true` or any other behavior for the rest of
 - Easier: `root-app`'s resource tree only ever lists resources it actually
   delivers, matching the documented pattern; one less confusing entry when
   reading `kubectl get application root-app -o json` or the Argo CD UI.
-- Harder: none identified — `root-app.yaml` is applied once by
-  `terraform/delivery/` (ADR-005), never by Argo CD itself, so excluding it
-  from recursion changes nothing about how it reaches the cluster.
+- Harder — **this fix caused a live incident, discovered after merge**:
+  `gitops/root-app.yaml` already had `syncPolicy.automated.prune: true`,
+  and `root-app` was already self-tracking `Application/argocd/root-app`
+  in its own `.status.resources[]` (confirmed live before this PR, see
+  Context above). Adding `directory.exclude: 'root-app.yaml'` removed that
+  resource from the git-desired set on the very next automated sync. With
+  `prune: true` active, Argo CD correctly (per its own semantics) pruned
+  the no-longer-desired resource — which was `root-app`'s own `Application`
+  object. Argo CD self-deleted its top-level Application.
+  - Impact, all confirmed live: no cascade deletion of child
+    resources — `root-app` had no
+    `resources-finalizer.argocd.argoproj.io` finalizer, so every workload
+    Deployment/Secret/namespace kept running throughout (`kubectl get pod
+    -A` all `Running`, `kubectl get ns` all `Active`). Argo CD stopped
+    reconciling all of `gitops/` (no `root-app` Application existed) until
+    the human operator ran `kubectl apply -f gitops/root-app.yaml` to
+    recreate it — a one-time bootstrap-equivalent action, not a
+    CLAUDE.md-gated `apply`/merge. `root-app` reached `Synced`/`Healthy`
+    again within ~15s of recreation and no longer self-references (
+    `Application/argocd/root-app` no longer appears in its own
+    `.status.resources[]`).
+  - Root cause of the miss: removing a resource a `prune: true` app is
+    already tracking is a textbook GitOps self-prune trap, and it was
+    foreseeable directly from the diff (the PR's own description already
+    stated the self-tracking fact) without needing to touch the live
+    cluster. This should have been caught by a `kubectl diff` / `argocd
+    app diff --local` before merge. `docs/conventions.md` now requires
+    this check for any future change to `root-app.yaml`'s `syncPolicy` or
+    `spec.source.directory` settings.
 - No change to the actual Degraded-health incident this was investigated
   alongside; that root cause is Vault dev-mode state loss, tracked
   separately (fix: re-run `scripts/bootstrap-vault.sh`, owned by
