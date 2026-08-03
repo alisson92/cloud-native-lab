@@ -2,6 +2,13 @@
 # the "build" stage installs dependencies, the "runtime" stage copies only
 # what's needed to run, keeping the final image small and dependency-free of
 # npm/build tooling.
+#
+# alpine3.24 (>= Alpine 3.20): @confluentinc/kafka-javascript (Phase 6 batch
+# 2, kafka.js) ships prebuilt musl binaries via node-pre-gyp for Alpine
+# 3.20+ / Node 18-24 (confirmed against the package's own docs/examples in
+# this session), so plain `npm ci` below needs no extra apk build-deps
+# (python3/make/g++/openssl-dev/...) — those are only required on older
+# Alpine bases without a matching prebuilt binary.
 FROM node:22.23.2-alpine3.24 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./

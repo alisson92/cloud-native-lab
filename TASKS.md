@@ -80,6 +80,21 @@
   `secret/data/rabbitmq` only via a distinct `worker-vault-auth` SA (see
   PR body: deviation from brief's literal `vault-auth` naming, for
   least-privilege). Key decision: ADR-011. Kafka is batch 2, untouched.
+- [review] (data-engineer) Batch 2/2: Kafka (Strimzi, KRaft), `order-events`
+  topic, backend publishes there via new `kafka.js`
+  (`@confluentinc/kafka-javascript` — kafkajs is unmaintained since 2023).
+  PR #24, branch `phase-6/kafka`, based on `phase-6/rabbitmq`.
+  `KafkaUser` credentialed from Vault (`secret/kafka`) via a pre-existing
+  Secret referenced in `spec.authentication.password.valueFrom` — brief's
+  hard requirement met, no fallback needed. Key decision: ADR-012.
+- [review] (data-engineer) Phase-gate fix on PR #24: backend's unconditional,
+  unguarded `createKafkaProducer()` at startup raced the `KafkaUser` CR
+  (wave 3), deadlocking Argo CD at wave 2 on a fresh sync. Fixed by moving
+  `gitops/services/backend/deployment.yaml` to sync-wave "4" (Option A —
+  simpler than hand-rolling retry logic the Kafka client doesn't natively
+  support; confirmed bff/frontend don't depend on backend's health at sync
+  time). ADR-012 Consequences updated; backend README exit-gate section
+  extended with the full RabbitMQ+Kafka order-flow verification.
 
 ## Phase 7 — Operations
 

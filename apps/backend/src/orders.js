@@ -1,15 +1,24 @@
 // Order creation/lookup. Price is looked up server-side from `products` —
-// clients never dictate price. RabbitMQ publishing (Phase 6, docs/phases.md)
-// happens here, after the Postgres transaction commits: the order write is
-// the source of truth (docs/vision.md: "PostgreSQL | Transactional store for
-// orders"), the queue message is a best-effort side effect notifying the
-// worker to send an email/invoice. Kafka publishing (Phase 6 batch 2, a
-// separate immutable-event-log role) is still out of scope for this file.
+// clients never dictate price. Both RabbitMQ and Kafka publishing
+// (Phase 6, docs/phases.md) happen here, after the Postgres transaction
+// commits: the order write is the source of truth (docs/vision.md:
+// "PostgreSQL | Transactional store for orders"). The two publishes are
+// deliberately separate calls to separate modules — RabbitMQ's task-queue
+// message (best-effort, notifies the worker to send an email/invoice) and
+// Kafka's event-log record (best-effort, replayable fact for future
+// consumers like Airflow) are distinct concerns per docs/architecture.md:
+// "do not blur them".
 'use strict';
 
-const { publishOrderCreated } = require('./rabbitmq');
+const { publishOrderCreated: publishOrderCreatedToQueue } = require('./rabbitmq');
+const { publishOrderCreated: publishOrderCreatedToLog } = require('./kafka');
 
-async function createOrder(pgPool, { productId, quantity } = {}, rabbitmqChannel = null) {
+async function createOrder(
+  pgPool,
+  { productId, quantity } = {},
+  rabbitmqChannel = null,
+  kafkaProducer = null
+) {
   if (!productId || !quantity || quantity <= 0) {
     const err = new Error('productId and a positive quantity are required');
     err.statusCode = 400;
@@ -38,16 +47,26 @@ async function createOrder(pgPool, { productId, quantity } = {}, rabbitmqChannel
     await client.query('COMMIT');
     const order = { id: insert.rows[0].id, productId, quantity, totalCents };
 
-    // Publish only after COMMIT succeeds — never notify the worker about an
-    // order that didn't actually persist. A publish failure must not fail
-    // the HTTP response: the order is already durably written to Postgres,
-    // and losing a best-effort email/invoice notification is an accepted
-    // trade-off for this lab (see docs/adr/011-rabbitmq-plain-deployment.md).
+    // Publish only after COMMIT succeeds — never notify the worker or
+    // append to the event log about an order that didn't actually persist.
+    // Neither publish failure may fail the HTTP response: the order is
+    // already durably written to Postgres, and losing a best-effort
+    // notification/event is an accepted trade-off for this lab (see
+    // docs/adr/011-rabbitmq-plain-deployment.md and
+    // docs/adr/012-kafka-strimzi-kraft-and-vault-user.md).
     if (rabbitmqChannel) {
       try {
-        publishOrderCreated(rabbitmqChannel, order);
+        publishOrderCreatedToQueue(rabbitmqChannel, order);
       } catch (err) {
-        console.error('failed to publish order-created message', err);
+        console.error('failed to publish order-created message to RabbitMQ', err);
+      }
+    }
+
+    if (kafkaProducer) {
+      try {
+        await publishOrderCreatedToLog(kafkaProducer, order);
+      } catch (err) {
+        console.error('failed to publish order-created event to Kafka', err);
       }
     }
 

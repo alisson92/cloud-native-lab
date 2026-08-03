@@ -10,11 +10,12 @@
 # via `docker pull ghcr.io/alisson92/backend:ed1a6ca9...`. Tags are
 # immutable per commit (service-ci.yml's `env.IMAGE` uses `github.sha`), so
 # this must be bumped by hand to a new sha each time a future change to
-# apps/backend/ merges to main and CI pushes a new image. NOTE (Phase 6):
-# this PR changes apps/backend/ (rabbitmq.js, new amqplib dependency) but
-# cannot know the merge commit's sha in advance — bumping this tag to the
-# image CI actually pushes for this change is a required follow-up once
-# this PR is merged, same pattern as Phase 5's post-merge tag-bump fix.
+# apps/backend/ merges to main and CI pushes a new image. NOTE (Phase 6
+# batch 2): this PR again changes apps/backend/ (kafka.js, new
+# @confluentinc/kafka-javascript dependency) but cannot know the merge
+# commit's sha in advance — bumping this tag to the image CI actually
+# pushes for this change is a required follow-up once this PR is merged,
+# same pattern as Phase 5's and batch 1's post-merge tag-bump fixes.
 #
 # POSTGRES_HOST: CloudNativePG auto-creates a read-write Service named
 # "<cluster-name>-rw" in the Cluster's namespace
@@ -30,6 +31,14 @@
 # RABBITMQ_HOST (Phase 6): confirmed against gitops/data/rabbitmq/
 # service.yaml (metadata.name: rabbitmq, namespace: rabbitmq) ->
 # "rabbitmq.rabbitmq.svc.cluster.local".
+#
+# KAFKA_HOST (Phase 6 batch 2): Strimzi auto-creates a bootstrap Service
+# named "<Kafka CR name>-kafka-bootstrap" in the Kafka CR's namespace
+# (confirmed live in this session against Strimzi's own docs/examples);
+# gitops/data/kafka/cluster.yaml's Kafka CR is named "kafka" in namespace
+# "kafka", so the Service is
+# "kafka-kafka-bootstrap.kafka.svc.cluster.local", port 9092 (the "plain"
+# SASL_PLAINTEXT/SCRAM-SHA-512 listener defined there).
 #
 # POSTGRES_DB: "orders", matching gitops/data/postgres/cluster.yaml's
 # spec.bootstrap.initdb.database.
@@ -48,10 +57,35 @@ metadata:
   name: backend
   namespace: apps
   annotations:
-    # Sync wave "2": consumes the "backend-credentials" Secret produced by
+    # Sync wave "4" (Phase 6 batch 2 fix; was "2" before Kafka landed):
+    # `apps/backend/src/index.js`'s main() calls `createKafkaProducer()`
+    # unconditionally at startup (unlike the per-order publish in
+    # orders.js/kafka.js, which is best-effort and swallows failures).
+    # KafkaJS-compatible clients (confirmed against
+    # @confluentinc/kafka-javascript's own docs, fetched live in this
+    # session: https://docs.confluent.io/kafka-clients/javascript/current/migration.html)
+    # throw non-retriably on a SASL/SCRAM authentication failure at
+    # connect() — there is no lazy-connect option and connection-time auth
+    # failures are not covered by the client's `retry` block (that only
+    # covers Produce request retries). The broker only recognizes backend's
+    # SCRAM credentials once gitops/data/kafka/user.yaml's KafkaUser CR
+    # (wave "3") reconciles. Backend at the SAME wave as the Kafka broker
+    # CRs (gitops/data/kafka/cluster.yaml, wave "2") would race that
+    # KafkaUser and, per
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    # ("all resources in wave N must be healthy ... before Argo CD will
+    # proceed to wave N+1"), a crash-looping backend at wave 2 would
+    # permanently block wave 3 (the KafkaUser) from ever syncing —
+    # deadlock, not a self-resolving race. Moving backend to wave "4"
+    # (after the KafkaUser, wave "3") breaks the deadlock. Verified this
+    # does not create a NEW ordering problem: bff's and frontend's own
+    # `/health` readiness checks (gitops/services/bff/deployment.yaml,
+    # gitops/services/frontend/deployment.yaml) do not call backend, so
+    # nothing at wave "2" depends on backend being healthy at sync time.
+    # Also consumes the "backend-credentials" Secret produced by
     # externalsecret.yaml (wave "1") and needs the postgres/redis Services
     # (already synced in Phase 4, unrelated wave numbering) to resolve.
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: "4"
     # SkipDryRunOnMissingResource: same first-ever-sync CRD-then-CR ordering
     # concern as gitops/data/postgres/cluster.yaml — this Deployment
     # references a Secret produced by an ExternalSecret CR that may not
@@ -121,6 +155,20 @@ spec:
                 secretKeyRef:
                   name: backend-credentials
                   key: RABBITMQ_PASSWORD
+            - name: KAFKA_HOST
+              value: "kafka-kafka-bootstrap.kafka.svc.cluster.local"
+            - name: KAFKA_PORT
+              value: "9092"
+            - name: KAFKA_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: backend-credentials
+                  key: KAFKA_USERNAME
+            - name: KAFKA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backend-credentials
+                  key: KAFKA_PASSWORD
           readinessProbe:
             httpGet:
               path: /health

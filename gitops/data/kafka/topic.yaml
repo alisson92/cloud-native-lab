@@ -1,0 +1,43 @@
+# KafkaTopic: "order-events", the durable, replayable log of order
+# lifecycle events (docs/vision.md: "Kafka | Immutable event log: order
+# lifecycle events for many consumers"). Backend produces here
+# (apps/backend/src/kafka.js); Airflow (Phase 7, docs/phases.md) will
+# consume it to build sales reports — the "many consumers" side of this
+# topic's role, out of scope for this batch.
+#
+# partitions/replicas: 1/1 — this cluster has exactly one broker
+# (gitops/data/kafka/cluster.yaml), so replicas > 1 is impossible, and this
+# lab has no measured throughput requiring more than one partition
+# (docs/conventions.md: "prefer defaults... without a measured reason").
+# Ordering across all events for a given order therefore falls out for
+# free (single partition = total order), which is also the simplest
+# correctness story for a lab consumer.
+#
+# No custom `config` (retention.ms, segment.bytes, ...): the broker's own
+# defaults are used, per docs/conventions.md's preference for defaults
+# over untuned custom values.
+#
+# strimzi.io/cluster label: required by the Topic Operator to know which
+# Kafka cluster this topic belongs to — same mechanism as
+# cluster.yaml's KafkaNodePool.
+#
+# Docs consulted:
+# - https://github.com/strimzi/strimzi-kafka-operator/blob/main/examples/topic/kafka-topic.yaml
+#   (authoritative KafkaTopic shape, fetched live in this session)
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: order-events
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+  annotations:
+    # Sync wave "3": after the Kafka cluster itself (wave "2") — the Topic
+    # Operator that reconciles this CR runs as part of the Kafka CR's
+    # entityOperator, so it does not exist until that wave has synced.
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  partitions: 1
+  replicas: 1

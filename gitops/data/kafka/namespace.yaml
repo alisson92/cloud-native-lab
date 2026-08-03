@@ -1,0 +1,15 @@
+# Namespace shared by the Strimzi Cluster Operator
+# (gitops/apps/strimzi.yaml) and this directory's Kafka workload — see that
+# file's header comment for why this differs from CloudNativePG's
+# operator/data split.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka
+  annotations:
+    # Sync wave "1": applied after the strimzi and external-secrets
+    # Applications (wave "0") so both the kafka.strimzi.io CRDs and ESO's
+    # CRDs already exist when secretstore.yaml/externalsecret.yaml in this
+    # directory sync.
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "1"
