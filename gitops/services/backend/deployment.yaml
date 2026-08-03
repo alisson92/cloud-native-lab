@@ -4,18 +4,20 @@
 # and Redis (catalog cache) directly; BFF/frontend never reach these data
 # stores themselves (see gitops/services/README.md).
 #
-# image tag: pinned to the github.sha of the main commit that merged PR #16
-# (the CI fix round), which is the first commit whose CI push job actually
-# ran and succeeded end-to-end (build->test->scan->push) — confirmed live
-# via `docker pull ghcr.io/alisson92/backend:ed1a6ca9...`. Tags are
-# immutable per commit (service-ci.yml's `env.IMAGE` uses `github.sha`), so
-# this must be bumped by hand to a new sha each time a future change to
-# apps/backend/ merges to main and CI pushes a new image. NOTE (Phase 6
-# batch 2): this PR again changes apps/backend/ (kafka.js, new
-# @confluentinc/kafka-javascript dependency) but cannot know the merge
-# commit's sha in advance — bumping this tag to the image CI actually
-# pushes for this change is a required follow-up once this PR is merged,
-# same pattern as Phase 5's and batch 1's post-merge tag-bump fixes.
+# image tag: pinned to the github.sha of the `main` commit
+# ca05f6b833b23500531478cc6a053608e7ac2252 — the backend-ci push build
+# (2026-08-03T13:50:27Z, run confirmed via `gh run list --workflow=backend-ci`,
+# conclusion success, event push, branch main) that includes the Kafka
+# producer (apps/backend/src/kafka.js, PR #24). This is a one-time manual
+# backfill: the `bump-gitops` CI automation (ADR-013, PR #25) that now bumps
+# this tag automatically on every push did not exist yet when this build and
+# the prior worker/backend Phase-6 builds ran, so the tag was left stale at
+# the pre-Phase-6 sha (ed1a6ca9...) until this fix — confirmed live via
+# `docker pull ghcr.io/alisson92/backend:ca05f6b833b23500531478cc6a053608e7ac2252`
+# (digest sha256:769918ce13b499b7a4b18e3f1faeec52a77011bcf9d7aaa09e54190c3917c3b7).
+# Tags are immutable per commit (service-ci.yml's `env.IMAGE` uses
+# `github.sha`); from this point on, `bump-gitops` (PR #25) handles future
+# bumps automatically — no more manual backfills expected.
 #
 # POSTGRES_HOST: CloudNativePG auto-creates a read-write Service named
 # "<cluster-name>-rw" in the Cluster's namespace
@@ -109,7 +111,7 @@ spec:
         runAsGroup: 1000
       containers:
         - name: backend
-          image: ghcr.io/alisson92/backend:ed1a6ca9210717a06bc79ebe83bce8ea8e93cbf6
+          image: ghcr.io/alisson92/backend:ca05f6b833b23500531478cc6a053608e7ac2252
           ports:
             - containerPort: 8080
               name: http

@@ -119,6 +119,16 @@
   SecretStore name collisions exist elsewhere in gitops/ (all others are
   in distinct namespaces). Branch `phase-6/fix-secretstore-name-collision`.
 
+## Phase 6 fix (owner: app-developer) — not phase-gating
+
+- (app-developer) Backfilled stale gitops image tags: `bump-gitops` (PR #25)
+  landed after the worker-ci (PR #23, sha `11d7e034...`) and backend-ci
+  (PR #24, sha `ca05f6b8...`) push builds ran, so the cluster was still
+  running the pre-Phase-6 image (worker's old heartbeat loop, not the real
+  RabbitMQ consumer). Bumped both `gitops/services/{backend,worker}/
+  deployment.yaml` tags to those shas; both confirmed pullable via
+  `docker pull` before commit. Branch `phase-6/backfill-image-tags`.
+
 ## Phase 7 — Operations
 
 - [todo] To be broken down by the orchestrator when Phase 6 gate passes.
