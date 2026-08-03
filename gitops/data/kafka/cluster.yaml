@@ -45,11 +45,31 @@
 # low-traffic reconciler (gitops/apps/cloudnativepg-operator.yaml) — a
 # single topic and a single user in this lab.
 #
+# authorization: type: simple — required because user.yaml's KafkaUser
+# "backend" declares spec.authorization.type: simple with ACLs scoped to
+# "order-events" (Describe+Write). Strimzi's User Operator rejects any
+# KafkaUser ACL declaration when the Kafka CR itself has no authorization
+# configured (confirmed live, root-app sync failure: "Simple authorization
+# ACL rules are configured but not supported in the Kafka cluster
+# configuration."). Per
+# https://strimzi.io/docs/operators/latest/configuring.html
+# (KafkaAuthorizationSimple schema reference): "set the type property in
+# the authorization section to the value simple" and Strimzi implements
+# this as Kafka's own StandardAuthorizer for KRaft-based deployments (the
+# only mode this Strimzi version supports; AclAuthorizer was the
+# ZooKeeper-mode equivalent). No `superUsers` added: Strimzi documents
+# (github.com/strimzi/strimzi-kafka-operator issue #12913, confirmed live)
+# that it already bootstraps its own internal components (Cluster
+# Operator, Topic/User Operators) as super users automatically when
+# authorization is enabled — the only KafkaUser this lab declares
+# (user.yaml's "backend") already has its own explicit ACLs and needs no
+# super-user override.
+#
 # Docs consulted:
 # - https://strimzi.io/docs/operators/latest/configuring.html
-#   (Kafka CR: spec.kafka.listeners/config/version/metadataVersion,
-#   KafkaNodePool: spec.roles/storage/resources, EntityOperator:
-#   topicOperator.resources/userOperator.resources)
+#   (Kafka CR: spec.kafka.listeners/config/version/metadataVersion/
+#   authorization, KafkaNodePool: spec.roles/storage/resources,
+#   EntityOperator: topicOperator.resources/userOperator.resources)
 # - https://github.com/strimzi/strimzi-kafka-operator/blob/main/examples/kafka/kafka-single-node.yaml
 #   (authoritative single-node KRaft shape, fetched live in this session)
 apiVersion: kafka.strimzi.io/v1
@@ -102,6 +122,8 @@ spec:
   kafka:
     version: 4.3.0
     metadataVersion: 4.3-IV0
+    authorization:
+      type: simple
     listeners:
       - name: plain
         port: 9092

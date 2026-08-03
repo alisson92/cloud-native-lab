@@ -129,6 +129,18 @@
   deployment.yaml` tags to those shas; both confirmed pullable via
   `docker pull` before commit. Branch `phase-6/backfill-image-tags`.
 
+## Phase 6 fix (owner: data-engineer) — not phase-gating
+
+- (data-engineer) Fixed root-app sync failure: `KafkaUser` "backend"
+  declares `authorization.type: simple` ACLs but the `Kafka` CR had no
+  `spec.kafka.authorization` block, so Strimzi's User Operator rejected
+  it (wave-3 hook failure blocking wave 4/backend). Added
+  `authorization: {type: simple}` to `cluster.yaml` (Strimzi's
+  StandardAuthorizer in KRaft); no `superUsers` needed — Strimzi
+  auto-bootstraps its own internal components as super users (issue
+  #12913). Validated via `kubectl explain` against the live CRD. PR #28,
+  branch `phase-6/fix-kafka-authorization`.
+
 ## Phase 7 — Operations
 
 - [todo] To be broken down by the orchestrator when Phase 6 gate passes.
