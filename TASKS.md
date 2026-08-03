@@ -58,6 +58,19 @@
   exit gate on Kind: order placed end-to-end (frontend->BFF->backend,
   Postgres row written, Redis cache-aside hit). Key decision: ADR-009.
 
+## Phase 5 fix (owner: security-engineer) — not phase-gating
+
+- (security-engineer) Replaced 4 duplicated manual Vault dev-mode bootstrap
+  procedures (secrets-demo, postgres, redis, backend READMEs) with one
+  idempotent `scripts/bootstrap-vault.sh`, safe to re-run after any
+  `vault-0` restart (dev-mode loses the Kubernetes auth method too, not
+  just KV data — verified against HashiCorp's dev-server docs). Considered
+  switching to `standalone` mode (ADR-010): rejected, since this lab has no
+  auto-unseal/KMS, so unseal-key custody would just recreate the same
+  can't-land-in-Git problem the root token already has. Key decision:
+  ADR-010 (does not supersede ADR-006). PR: see branch
+  `phase-5/vault-bootstrap-fix`.
+
 ## Phase 6 — Messaging (owner: data-engineer)
 
 - [todo] To be broken down by the orchestrator. Definitions in `docs/phases.md`.

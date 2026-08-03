@@ -6,47 +6,27 @@ Secrets Operator (ESO) — no credential ever written to Git. See
 `docs/adr/007-redis-plain-deployment.md` for why a plain Deployment (not an
 operator) was chosen.
 
-## One-time Vault bootstrap (manual, not GitOps — see why below)
+## One-time Vault bootstrap (script, not GitOps — see why below)
 
 Same reasoning as `gitops/secrets-demo/README.md`: Vault dev-mode
 (`gitops/apps/vault.yaml`) starts empty on every restart, and only the
-root token can write data or configure the Kubernetes auth method. Run this
-once, after the `vault` and `external-secrets` Argo CD Applications report
+root token can write data or configure the Kubernetes auth method.
+
+Run `scripts/bootstrap-vault.sh` from the repo root once, after the
+`vault` and `external-secrets` Argo CD Applications report
 `Synced`/`Healthy`, and again after every Vault pod restart (see
-`docs/adr/006-vault-dev-mode-for-lab.md`):
+`docs/adr/006-vault-dev-mode-for-lab.md` and
+`docs/adr/010-vault-bootstrap-script.md`). It writes the Redis password,
+the `redis-read` policy, and the `redis` role, along with
+secrets-demo/Postgres/backend's setup in the same run:
 
 ```sh
-# 1. Retrieve the dev-mode root token from the pod's own startup log.
-kubectl -n vault logs vault-0 | grep 'Root Token'
-
-# 2. Log in inside the pod.
-kubectl -n vault exec -it vault-0 -- vault login   # paste the token when prompted
-
-# 3. Write the Redis password (kv-v2, auto-mounted at "secret/" in dev
-#    mode). Use a real generated password here, not this placeholder.
-kubectl -n vault exec vault-0 -- vault kv put secret/redis \
-  password=<generate-a-real-password>
-
-# 4. Policy: read-only access to the one Redis path.
-kubectl -n vault exec -i vault-0 -- vault policy write redis-read - <<'EOF'
-path "secret/data/redis" {
-  capabilities = ["read"]
-}
-EOF
-
-# 5. Role: binds the policy to the `vault-auth` ServiceAccount in `redis`,
-#    matching secretstore.yaml's serviceAccountRef/audience.
-kubectl -n vault exec vault-0 -- vault write auth/kubernetes/role/redis \
-  bound_service_account_names=vault-auth \
-  bound_service_account_namespaces=redis \
-  audience=vault \
-  policies=redis-read \
-  ttl=1h
+./scripts/bootstrap-vault.sh
 ```
 
-Docs consulted: https://developer.hashicorp.com/vault/docs/auth/kubernetes
-(auth method role), https://developer.hashicorp.com/vault/docs/secrets/kv/kv-v2
-(kv-v2 write).
+The password is generated once and cached locally (gitignored, never
+committed) so reruns after a Vault restart write back the *same* password
+the running Redis instance already has — see the script's header comment.
 
 ## Verifying the exit gate
 

@@ -40,6 +40,13 @@ terraform.rc
 *.pem
 *.key
 
+# --- scripts/bootstrap-vault.sh local password cache ---
+# Generated Postgres/Redis passwords, cached locally so re-running the
+# bootstrap after a Vault dev-mode restart is idempotent instead of
+# rotating credentials already-running workloads still expect. Never
+# committed — see scripts/bootstrap-vault.sh's header comment.
+.vault-bootstrap-cache/
+
 # --- Python (Airflow DAGs, automation, scripts) ---
 __pycache__/
 *.pyc
