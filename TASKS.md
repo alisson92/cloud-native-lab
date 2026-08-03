@@ -96,6 +96,19 @@
   time). ADR-012 Consequences updated; backend README exit-gate section
   extended with the full RabbitMQ+Kafka order-flow verification.
 
+## Tooling — Automated gitops image-tag bump (not phase-gating)
+
+- (app-developer) Added `bump-gitops` job to `.github/workflows/service-ci.yml`:
+  after `push` lands a new image on `main`, it bumps
+  `gitops/services/<service>/deployment.yaml`'s tag to the new sha on a
+  stable, force-pushed `ci/bump-<service>-image` branch and opens/updates a
+  PR (`gh pr create`/`gh pr edit`) — never merges (human gate preserved).
+  Job-scoped `permissions: contents: write, pull-requests: write`. Fixes the
+  stale-tag issue flagged in Phase 5 (PR #17) and currently pending on
+  Phase 6's backend/worker. Key decision: ADR-013. Human must also enable
+  repo setting "Allow GitHub Actions to create and approve pull requests"
+  (one-time, see ADR-013). Branch `ci/automate-image-tag-bump`.
+
 ## Phase 7 — Operations
 
 - [todo] To be broken down by the orchestrator when Phase 6 gate passes.
