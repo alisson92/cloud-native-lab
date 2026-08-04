@@ -192,10 +192,21 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 256Mi
+              memory: 512Mi
             limits:
               cpu: 500m
-              memory: 512Mi
+              memory: 1Gi
+          # Live-tested OOMKilled at the original 512Mi limit (exitCode
+          # 137, confirmed via `.status.containerStatuses[0].lastState`,
+          # 2 restarts observed) — this container is not just the
+          # scheduler process: `executor: "LocalExecutor"` (docs/adr/017)
+          # means every DAG task also runs as a subprocess inside this
+          # same container, on top of DAG parsing and the scheduler loop
+          # itself, so its baseline footprint is higher than a
+          # scheduler-only pod. Doubled to 1Gi/512Mi requests/limits
+          # rather than a smaller incremental bump, since a second
+          # under-sized guess would just cost another live round for the
+          # same root cause.
           # Same log-groomer sidecar concern as dagProcessor above —
           # `scheduler.logGroomerSidecar.resources` (~line 2019 in this
           # chart version's `values.yaml`), independently defaulted to
