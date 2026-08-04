@@ -93,6 +93,21 @@
   same trade-off as ADR-007/011). ADR-016. `helm template` validated
   clean. Follow-up noted for reviewer: app tier has no `/metrics`/
   ServiceMonitor yet — out of scope here. Airflow half done separately.
+- [review] (platform-engineer) Airflow via GitOps (`gitops/apps/airflow.yaml`,
+  chart 1.22.0/Airflow 3.2.2, LocalExecutor) + nightly `sales_report` DAG
+  (Postgres aggregate + Kafka event-count, ConfigMap-delivered). New
+  CloudNativePG `Database`/managed role (reused cluster) and Kafka
+  `KafkaUser` "airflow" (replaces gate-verifier, ADR-015's own accepted
+  trade-off). Custom image (`apps/airflow/Dockerfile` +
+  `airflow-ci.yml`) adds the Kafka provider; image tag is a manual
+  placeholder pending first CI push (open risk for reviewer/human — see
+  PR). ADR-017..020. `helm template`/`yamllint`-equivalent (manual `yaml`
+  parse) clean; DAG `py_compile` clean. Branch `phase-7/airflow`.
+- [done] (technical-writer) Root `README.md` + `docs/order-flow.md` added,
+  grounded in Phase 1-6 shipped state only (no Phase 7 components). Every
+  diagram element checked against `gitops/`/`apps/src/` in this session;
+  ADR-007/009/011/012/015 outcomes reflected. Branch:
+  `docs/readme-and-diagrams`.
 
 ## Log
 

@@ -1,0 +1,257 @@
+# Apache Airflow, via the official Helm chart (Phase 7, docs/architecture.md
+# "Operations" layer: "Airflow (batch ETL)... added last"). Nightly ETL:
+# aggregates order events into sales reports (docs/vision.md).
+#
+# Chart version 1.22.0 (appVersion/Airflow 3.2.2) confirmed live against
+# https://airflow.apache.org/index.yaml (official Helm repo index) in this
+# session — the latest published stable release at the time of writing.
+#
+# Image: gitops/data/kafka's "Kafka access" concern (this Application's
+# `images.airflow` override) requires apache-airflow-providers-apache-kafka,
+# which the stock `apache/airflow` image does not ship — see
+# apps/airflow/Dockerfile and .github/workflows/airflow-ci.yml. The tag
+# below is bumped manually for now (see PR description; no bump-gitops
+# automation yet for this image, contrast with ADR-013's per-service
+# workflows).
+#
+# Docs consulted:
+# - https://airflow.apache.org/docs/helm-chart/1.22.0/parameters-ref.html
+#   (chart values reference)
+# - https://raw.githubusercontent.com/apache/airflow/helm-chart/1.22.0/chart/values.yaml
+#   (this chart version's actual default values, fetched live in this
+#   session — the reference above is generated from the same file)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: airflow
+  namespace: argocd
+  annotations:
+    # Sync wave "4" — deliberately NOT wave "0" like every other
+    # gitops/apps/*.yaml chart (those install operators/CRDs with no
+    # runtime dependency on Vault-sourced Secrets or a ConfigMap). Unlike an
+    # operator, this chart deploys the actual Airflow WORKLOAD, which needs:
+    #   - gitops/data/airflow/'s ServiceAccount/SecretStore/ExternalSecrets
+    #     and DAG ConfigMap (wave "1")
+    #   - the "airflow" CloudNativePG Database + managed role
+    #     (gitops/data/postgres/, wave "2"/"3") to exist before
+    #     migrateDatabaseJob can run `airflow db migrate` against it
+    #   - the "airflow" KafkaUser (gitops/data/kafka/airflow-user.yaml,
+    #     wave "3") to exist before the scheduler can authenticate its
+    #     Kafka consumer
+    # Putting this Application at wave "0" would repeat the exact deadlock
+    # class documented in gitops/services/backend/deployment.yaml's Phase 6
+    # fix (bumped 2->4 there for the analogous KafkaUser race): a
+    # Progressing-but-never-Healthy Application at an early wave
+    # permanently blocks every later wave (including the one containing the
+    # dependency it's stuck waiting on) from ever syncing.
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: default
+
+  source:
+    repoURL: https://airflow.apache.org
+    chart: airflow
+    targetRevision: 1.22.0
+    helm:
+      valuesObject:
+        # LocalExecutor: see docs/adr/017-airflow-local-executor.md. Tasks
+        # run as subprocesses of the scheduler itself — no Celery broker
+        # (Redis) and no separate worker Deployment needed, the simplest
+        # executor this chart supports for a single-node lab with light,
+        # non-concurrent DAG load (docs/conventions.md: "simplest thing
+        # that works").
+        executor: "LocalExecutor"
+
+        images:
+          airflow:
+            repository: ghcr.io/alisson92/airflow
+            # Manual bump for this batch — see this file's header comment.
+            tag: "REPLACE_WITH_PUSHED_SHA"
+
+        # Disabled: none of these are needed by LocalExecutor and each is a
+        # whole extra workload on this single-node Kind host (docs/adr/017).
+        # - postgresql (bundled Bitnami chart): this cluster's metadata DB
+        #   is the existing CloudNativePG "orders" Cluster instead
+        #   (docs/adr/019-airflow-metadata-db-shared-cluster.md), reached
+        #   via `data.metadataSecretName` below.
+        # - redis: only used as the Celery broker; LocalExecutor has none.
+        # - statsd: no metrics consumer wired up for Airflow in this phase
+        #   (kube-prometheus-stack, deployed in parallel this same phase,
+        #   does not scrape a custom StatsD-to-Prometheus bridge without
+        #   extra wiring out of scope here) — no measured need, per
+        #   docs/conventions.md's "prefer defaults... without a measured
+        #   reason" applied in reverse (no reason to pay for it either).
+        # flower.enabled is already `false` by chart default (Celery-only
+        # UI), left untouched.
+        postgresql:
+          enabled: false
+        redis:
+          enabled: false
+        statsd:
+          enabled: false
+
+        # Triggerer only backs deferrable operators
+        # (https://airflow.apache.org/docs/apache-airflow/stable/authoring-and-scheduling/deferring.html,
+        # "Deferrable Operators & Triggers": a triggerer process is only
+        # needed "to use deferrable mode in your DAGs"). The sales-report
+        # DAG (gitops/data/airflow/dags-configmap.yaml) uses none — plain
+        # ConsumeFromTopicOperator/PythonOperator tasks that run to
+        # completion on the scheduler. One fewer Deployment on this
+        # single-node host.
+        triggerer:
+          enabled: false
+
+        # dagProcessor: left at the chart default (`~`, unset). Confirmed
+        # live against this chart version's own template
+        # (dag-processor-deployment.yaml): when unset, it resolves to
+        # `true` for any `airflowVersion >= 3.0.0` — Airflow 3 moved DAG
+        # parsing out of the scheduler into this standalone component, so
+        # it is not optional for this chart's default `airflowVersion`
+        # (3.2.2) and must not be force-disabled.
+        dagProcessor:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 200m
+              memory: 512Mi
+
+        scheduler:
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+        apiServer:
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+        migrateDatabaseJob:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          # Both Job settings below follow this chart version's own
+          # values.yaml comment verbatim: "In case you need to disable the
+          # helm hooks that create the jobs after install. Disable this if
+          # you are e.g. using ArgoCD" — with Helm hooks, Argo CD's
+          # automated/self-heal sync cycle does not reliably re-trigger a
+          # post-install/post-upgrade-only Job the way a plain `helm
+          # upgrade` invocation would. `jobAnnotations` (a chart-native
+          # field, independent of `useHelmHooks`) substitutes an Argo
+          # CD-native ordering primitive instead: this Job is given a
+          # sync-wave *within this single Application's own sync*, ahead of
+          # the (default, wave "0") scheduler/apiServer Deployments and the
+          # createUserJob below, so `airflow db migrate` always completes
+          # against the "airflow" database
+          # (gitops/data/postgres/airflow-database.yaml) before anything
+          # else in this release starts.
+          # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+          # (per-resource annotation, scoped to this Application's own sync
+          # operation — distinct from this file's own top-level
+          # `argocd.argoproj.io/sync-wave: "4"`, which orders root-app's
+          # sync of gitops/ as a whole)
+          useHelmHooks: false
+          jobAnnotations:
+            argocd.argoproj.io/sync-wave: "-2"
+
+        createUserJob:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          # Same ArgoCD-hooks rationale as migrateDatabaseJob above. Wave
+          # "-1": after the DB migration (wave "-2", the `users` table must
+          # exist first) but still before the default-wave "0"
+          # scheduler/apiServer.
+          useHelmHooks: false
+          jobAnnotations:
+            argocd.argoproj.io/sync-wave: "-1"
+
+        # Airflow metadata database: the existing CloudNativePG "orders"
+        # Cluster (gitops/data/postgres/cluster.yaml), a dedicated
+        # "airflow" Database + managed role, NOT a second Postgres instance
+        # — docs/adr/019-airflow-metadata-db-shared-cluster.md.
+        # `metadataSecretName` (rather than the plaintext
+        # `data.metadataConnection.*` fields, which would put a password in
+        # this Git-committed values block) references a pre-existing Secret
+        # with a `connection` key holding the full SQLAlchemy URI, produced
+        # by gitops/data/airflow/externalsecret-metadata-db.yaml from Vault
+        # — same "never write a live credential into gitops/" rule as
+        # every ExternalSecret-backed Secret reference elsewhere in this
+        # repo.
+        # https://raw.githubusercontent.com/apache/airflow/helm-chart/1.22.0/chart/values.yaml
+        # (`data.metadataSecretName` comment: "secret itself has to be
+        # created manually with 'connection' key")
+        data:
+          metadataSecretName: airflow-metadata-db-credentials
+
+        # Airflow Connections needed by the DAG (gitops/data/airflow/
+        # dags-configmap.yaml), sourced the same way: pre-existing Secrets
+        # (Vault -> ESO, gitops/data/airflow/externalsecret-*.yaml)
+        # injected as `AIRFLOW_CONN_<CONN_ID>` env vars, the documented
+        # env-var-connection mechanism
+        # (https://airflow.apache.org/docs/apache-airflow/stable/howto/connection.html,
+        # "Storing a Connection in Environment Variables", JSON format
+        # added in 2.3.0). `secret:` (a chart-native list, distinct from
+        # Kubernetes `Secret` objects) mounts one key from an existing
+        # Secret as one env var on every Airflow container — the same
+        # mechanism this chart uses for its own built-in secrets (see
+        # `enableBuiltInSecretEnvVars` in the chart's values.yaml).
+        secret:
+          - envName: AIRFLOW_CONN_ORDERS_POSTGRES
+            secretName: airflow-postgres-connection
+            secretKey: connection
+          - envName: AIRFLOW_CONN_KAFKA_DEFAULT
+            secretName: airflow-kafka-connection
+            secretKey: connection
+
+        # DAG delivery: docs/adr/018-airflow-dag-configmap-delivery.md.
+        # `volumes`/`volumeMounts` (top-level, applied to every Airflow
+        # container per this chart's own values.yaml comments) mount the
+        # single DAG file from gitops/data/airflow/dags-configmap.yaml at a
+        # `subPath` inside the default DAGs folder
+        # (`airflowHome: /opt/airflow` chart default -> `/opt/airflow/dags`)
+        # — no `dags.persistence`/`dags.gitSync` needed.
+        volumes:
+          - name: sales-report-dag
+            configMap:
+              name: airflow-dags
+        volumeMounts:
+          - name: sales-report-dag
+            mountPath: /opt/airflow/dags/sales_report_dag.py
+            subPath: sales_report_dag.py
+            readOnly: true
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: airflow
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # Same first-ever-sync CRD-then-CR / large-manifest concerns as every
+      # other Helm-chart Application in this repo — this chart also renders
+      # a couple of CustomResource-sized ConfigMaps/Secrets under Argo CD's
+      # 256KiB client-side last-applied-configuration annotation limit risk.
+      # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-options/#server-side-apply
+      - ServerSideApply=true

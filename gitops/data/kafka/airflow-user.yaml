@@ -1,0 +1,66 @@
+# KafkaUser: SCRAM-SHA-512 credential for Airflow's read-only Kafka
+# consumer (Phase 7, docs/vision.md: "Airflow | Nightly batch ETL:
+# aggregate events into sales reports"), following user.yaml's "backend"
+# Vault-sourced pattern (ADR-012), per
+# docs/adr/015-kafka-gate-verifier-user.md's Consequences — this is the
+# real, long-lived workload credential the gate-verifier KafkaUser (Phase
+# 6, now removed) stood in for.
+#
+# metadata.name: "airflow" — a KafkaUser's SASL username is always its own
+# metadata.name (see user.yaml's header comment); this MUST match
+# scripts/bootstrap-vault.sh's "secret/airflow-kafka" username value
+# ("airflow", documentation-only there, same cross-check convention as
+# every other Vault-sourced identity in this repo).
+#
+# spec.authorization: simple ACLs, least-privilege, read-only — identical
+# shape to gate-verifier-user.yaml's (Describe+Read on the topic, Read on
+# exactly one named, literal consumer group), except the group id matches
+# gitops/data/airflow/externalsecret-kafka-connection.yaml's
+# "group.id": "airflow-sales-report" (the DAG's actual consumer group, not
+# a throwaway CLI one).
+#
+# Docs consulted:
+# - https://strimzi.io/docs/operators/latest/configuring.html
+#   (KafkaUser spec.authentication scram-sha-512 with a predefined
+#   password via valueFrom.secretKeyRef; spec.authorization simple ACLs,
+#   resource types "topic"/"group")
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: airflow
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+  annotations:
+    # Sync wave "3": same wave as user.yaml/gate-verifier-user.yaml — all
+    # reconciled by the same User Operator, which only exists once the
+    # Kafka cluster (wave "2") is up. Also after
+    # airflow-user-externalsecret.yaml (wave "1"), whose Secret this CR
+    # references.
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  authentication:
+    type: scram-sha-512
+    password:
+      valueFrom:
+        secretKeyRef:
+          name: airflow-kafka-credentials
+          key: password
+  authorization:
+    type: simple
+    acls:
+      - resource:
+          type: topic
+          name: order-events
+          patternType: literal
+        operations:
+          - Describe
+          - Read
+      - resource:
+          type: group
+          name: airflow-sales-report
+          patternType: literal
+        operations:
+          - Read

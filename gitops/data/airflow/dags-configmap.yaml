@@ -1,0 +1,202 @@
+# ConfigMap holding the sales-report DAG's single source file. Mounted by
+# gitops/apps/airflow.yaml's top-level `volumes`/`volumeMounts` at
+# `/opt/airflow/dags/sales_report_dag.py` — see
+# docs/adr/018-airflow-dag-configmap-delivery.md for why a ConfigMap (not
+# `dags.gitSync`) delivers this file.
+#
+# Data-source split (Postgres for the day's revenue aggregate, Kafka as an
+# independent event-log cross-check) is explained in
+# docs/adr/020-airflow-kafka-postgres-source-split.md and in this file's
+# own docstring/comments below — read together, not duplicated here.
+#
+# Docs consulted for the DAG code itself:
+# - https://airflow.apache.org/docs/apache-airflow/stable/core-concepts/dags.html
+#   (`from airflow.sdk import DAG`, `schedule=` parameter — Airflow 3's
+#   documented DAG-authoring surface)
+# - https://airflow.apache.org/docs/apache-airflow-providers-standard/stable/operators/python.html
+#   (`PythonOperator` moved to `airflow.providers.standard.operators.python`
+#   in Airflow 3; bundled by default in the base image)
+# - apache-airflow-providers-apache-kafka 1.15.0's own source, read
+#   directly from the published wheel in this session
+#   (`airflow/providers/apache/kafka/operators/consume.py`): confirms
+#   `ConsumeFromTopicOperator.execute()` always returns `None` (no XCom of
+#   consumed messages/counts), which is why the count is written to
+#   Postgres directly from `apply_function_batch` instead of being passed
+#   to a second task.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airflow-dags
+  namespace: airflow
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+data:
+  sales_report_dag.py: |
+    """Nightly sales-report ETL (Phase 7, docs/vision.md: "Airflow |
+    Nightly batch ETL: aggregate events into sales reports").
+
+    Two independent tasks, deliberately NOT chained into one pipeline (see
+    docs/adr/020-airflow-kafka-postgres-source-split.md for the full
+    reasoning):
+
+    * aggregate_daily_sales: reads `orders`/`products` from the "orders"
+      CloudNativePG database (connection "orders_postgres") and writes a
+      per-product revenue/order-count snapshot into `sales_reports`, one
+      row set per DAG run, tagged with that run's logical date. Postgres
+      is used here because it is the only source with `created_at`
+      (apps/backend/src/db.js) -- the durable, queryable system of record
+      for "what actually happened".
+
+      This lab's test data is sparse and was created well before Phase 7
+      existed, so a strict "orders created since yesterday" filter would
+      produce an empty (but still technically valid) report on most runs,
+      which is a weak signal for verifying the exit gate. The aggregate
+      below is therefore a full-history snapshot as of each run, not a
+      day-windowed delta -- a deliberate lab-scale simplification, noted
+      here rather than silently done.
+
+    * consume_order_events: replays "order-events" from Kafka (the
+      immutable event log, docs/vision.md) via
+      ConsumeFromTopicOperator and records how many messages this run
+      consumed into `kafka_event_counts`. This does NOT recompute the
+      Postgres aggregate -- the Kafka payload
+      (apps/backend/src/kafka.js: `{ type, order: { id, productId,
+      quantity, totalCents } }`) carries no timestamp, so it cannot
+      reproduce a dated report on its own. Its purpose is to prove the
+      event log is actually being read by a real, long-lived consumer
+      (this DAG), not just a throwaway CLI check
+      (docs/adr/015-kafka-gate-verifier-user.md's Consequences).
+
+    Both write into the same "orders" database (connection
+    "orders_postgres") that the aggregate reads from --
+    docs/adr/019-airflow-metadata-db-shared-cluster.md: this lab has no
+    separate reporting warehouse, and a table next to the source data is
+    the simplest place a report can land that is still trivially
+    verifiable with `psql`.
+    """
+
+    from __future__ import annotations
+
+    import pendulum
+    from airflow.providers.apache.kafka.operators.consume import ConsumeFromTopicOperator
+    from airflow.providers.postgres.hooks.postgres import PostgresHook
+    from airflow.providers.standard.operators.python import PythonOperator
+    from airflow.sdk import DAG
+
+    ORDERS_CONN_ID = "orders_postgres"
+
+    SALES_REPORT_DDL = """
+    CREATE TABLE IF NOT EXISTS sales_reports (
+        id SERIAL PRIMARY KEY,
+        report_date DATE NOT NULL,
+        product_id INTEGER NOT NULL,
+        product_name TEXT NOT NULL,
+        order_count INTEGER NOT NULL,
+        revenue_cents BIGINT NOT NULL,
+        generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """
+
+    # Full-history snapshot by product, see module docstring for why this
+    # is not windowed by day.
+    AGGREGATE_SQL = """
+    SELECT o.product_id, p.name AS product_name, COUNT(*) AS order_count,
+           SUM(o.total_cents) AS revenue_cents
+    FROM orders o
+    JOIN products p ON p.id = o.product_id
+    GROUP BY o.product_id, p.name
+    ORDER BY o.product_id
+    """
+
+    INSERT_REPORT_ROW_SQL = """
+    INSERT INTO sales_reports
+        (report_date, product_id, product_name, order_count, revenue_cents)
+    VALUES (%(report_date)s, %(product_id)s, %(product_name)s,
+            %(order_count)s, %(revenue_cents)s)
+    """
+
+    KAFKA_EVENT_COUNTS_DDL = """
+    CREATE TABLE IF NOT EXISTS kafka_event_counts (
+        id SERIAL PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        events_consumed INTEGER NOT NULL,
+        generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """
+
+    INSERT_EVENT_COUNT_SQL = """
+    INSERT INTO kafka_event_counts (run_id, events_consumed)
+    VALUES (%(run_id)s, %(events_consumed)s)
+    """
+
+
+    def aggregate_daily_sales(ds: str, **_context) -> None:
+        """Snapshot orders-by-product revenue into `sales_reports`."""
+        hook = PostgresHook(postgres_conn_id=ORDERS_CONN_ID)
+        hook.run(SALES_REPORT_DDL)
+        rows = hook.get_records(AGGREGATE_SQL)
+        for product_id, product_name, order_count, revenue_cents in rows:
+            hook.run(
+                INSERT_REPORT_ROW_SQL,
+                parameters={
+                    "report_date": ds,
+                    "product_id": product_id,
+                    "product_name": product_name,
+                    "order_count": order_count,
+                    "revenue_cents": revenue_cents,
+                },
+            )
+
+
+    def count_order_events_batch(messages, conn_id: str, run_id: str) -> None:
+        """`apply_function_batch` callback: record how many messages this
+        batch consumed. May run more than once per DAG run if Kafka
+        returns more than one batch (`max_batch_size`) -- one row per
+        batch call is intentional, not deduplicated, so
+        `SUM(events_consumed) WHERE run_id = ...` gives the run's total.
+        """
+        hook = PostgresHook(postgres_conn_id=conn_id)
+        hook.run(KAFKA_EVENT_COUNTS_DDL)
+        hook.run(
+            INSERT_EVENT_COUNT_SQL,
+            parameters={"run_id": run_id, "events_consumed": len(messages)},
+        )
+
+
+    with DAG(
+        dag_id="sales_report",
+        description=(
+            "Nightly ETL: snapshot orders-by-product revenue from Postgres "
+            "and replay order-events from Kafka into sales_reports / "
+            "kafka_event_counts (Phase 7 exit gate)."
+        ),
+        schedule="0 2 * * *",
+        start_date=pendulum.datetime(2026, 8, 1, tz="UTC"),
+        catchup=False,
+        max_active_runs=1,
+        tags=["phase-7", "sales-report"],
+    ) as dag:
+        aggregate_task = PythonOperator(
+            task_id="aggregate_daily_sales",
+            python_callable=aggregate_daily_sales,
+        )
+
+        consume_task = ConsumeFromTopicOperator(
+            task_id="consume_order_events",
+            kafka_config_id="kafka_default",
+            topics=["order-events"],
+            apply_function_batch=count_order_events_batch,
+            apply_function_kwargs={
+                "conn_id": ORDERS_CONN_ID,
+                "run_id": "{{ run_id }}",
+            },
+            commit_cadence="end_of_operator",
+            max_messages=1000,
+            max_batch_size=200,
+        )
+
+        # No dependency edge between the two tasks: independent sources,
+        # independent tables, see module docstring. Both listed so the
+        # DAG's graph view still shows both as part of one nightly run.
+        aggregate_task
+        consume_task

@@ -1,0 +1,17 @@
+# Namespace for the Airflow workload (Phase 7, docs/phases.md), same
+# pattern as every other data-tier namespace in this repo (see
+# gitops/data/postgres/namespace.yaml, gitops/data/kafka/namespace.yaml).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: airflow
+  annotations:
+    # Sync wave "1": applied after the external-secrets Application
+    # (wave "0") so ESO's CRDs already exist when secretstore.yaml/
+    # externalsecret-*.yaml in this directory sync. Also redundant with
+    # (and idempotent alongside) gitops/apps/airflow.yaml's own
+    # CreateNamespace=true sync option — same intentional double
+    # declaration pattern as gitops/data/kafka/namespace.yaml +
+    # gitops/apps/strimzi.yaml.
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "1"

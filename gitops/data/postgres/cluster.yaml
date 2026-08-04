@@ -22,6 +22,21 @@
 # Secret produced by externalsecret.yaml (type kubernetes.io/basic-auth,
 # required by this bootstrap method).
 #
+# spec.managed.roles (Phase 7): a second, narrower role "airflow" in this
+# SAME cluster, backing a NEW "airflow" Database (airflow-database.yaml) —
+# docs/adr/019-airflow-metadata-db-shared-cluster.md decided reuse over a
+# second CloudNativePG Cluster (this single-node Kind host has no spare
+# capacity for another Postgres instance). `passwordSecret.name` follows
+# the exact same rule as `bootstrap.initdb.secret` above: a
+# kubernetes.io/basic-auth Secret whose `username` key matches the role
+# `name` ("the username should match the role we are setting the password
+# for") — produced by airflow-role-externalsecret.yaml (wave "1", same
+# Vault kv-v2 path "secret/airflow" that
+# gitops/data/airflow/externalsecret-metadata-db.yaml also reads). Role
+# creation happens as an ongoing reconciliation, "after database
+# bootstrapping is complete" — safe to declare from this Cluster's first
+# sync onward, not just on a freshly-bootstrapped one.
+#
 # Docs consulted:
 # - https://cloudnative-pg.io/documentation/current/bootstrap/
 #   (bootstrap.initdb: database/owner/secret.name; secret must be
@@ -29,6 +44,10 @@
 # - https://cloudnative-pg.io/documentation/current/cloudnative-pg.v1/
 #   (spec.instances, spec.storage.size, spec.resources use core/v1
 #   ResourceRequirements)
+# - https://cloudnative-pg.io/docs/1.27/declarative_role_management/
+#   (spec.managed.roles: name/ensure/login/passwordSecret.name; password
+#   Secret type kubernetes.io/basic-auth, username must match role name;
+#   role creation deferred until after database bootstrapping)
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -68,3 +87,12 @@ spec:
       owner: orders
       secret:
         name: postgres-app-credentials
+
+  managed:
+    roles:
+      - name: airflow
+        ensure: present
+        login: true
+        superuser: false
+        passwordSecret:
+          name: airflow-postgres-role-credentials
