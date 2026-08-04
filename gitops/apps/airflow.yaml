@@ -195,9 +195,35 @@ spec:
           # operation — distinct from this file's own top-level
           # `argocd.argoproj.io/sync-wave: "4"`, which orders root-app's
           # sync of gitops/ as a whole)
+          #
+          # BUG FOUND LIVE (post-merge, see TASKS.md): `jobAnnotations`
+          # only annotates the Job object itself. The chart separately
+          # creates a dedicated ServiceAccount for this Job
+          # (`migrateDatabaseJob.serviceAccount.create: true` by default,
+          # confirmed against
+          # https://raw.githubusercontent.com/apache/airflow/helm-chart/1.22.0/chart/values.yaml)
+          # and that ServiceAccount got NO wave annotation, so it defaulted
+          # to wave "0" — the SAME wave as the scheduler/apiServer, LATER
+          # than this Job's wave "-2". Argo CD orders strictly by wave
+          # first, kind second
+          # (https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/,
+          # "the wave number... takes priority"), so kind-based ordering
+          # (ServiceAccount before Job within the *same* wave) never came
+          # into play: the wave "-2" Job was stuck Progressing forever,
+          # unable to find its own ServiceAccount, which blocked every
+          # later wave from syncing (same deadlock class as Phase 6's
+          # backend/KafkaUser fix, docs/phase-logs/phase-6.md). Fix: the
+          # chart exposes a per-component
+          # `migrateDatabaseJob.serviceAccount.annotations` field (same doc
+          # above) — annotated with the Job's own wave below, so Argo CD's
+          # same-wave kind ordering (ServiceAccount before Job) applies the
+          # ServiceAccount first.
           useHelmHooks: false
           jobAnnotations:
             argocd.argoproj.io/sync-wave: "-2"
+          serviceAccount:
+            annotations:
+              argocd.argoproj.io/sync-wave: "-2"
 
         createUserJob:
           resources:
@@ -210,10 +236,16 @@ spec:
           # Same ArgoCD-hooks rationale as migrateDatabaseJob above. Wave
           # "-1": after the DB migration (wave "-2", the `users` table must
           # exist first) but still before the default-wave "0"
-          # scheduler/apiServer.
+          # scheduler/apiServer. Same ServiceAccount-annotation bug/fix as
+          # migrateDatabaseJob above (`createUserJob.serviceAccount.annotations`,
+          # same chart values.yaml reference), matched to this Job's own
+          # wave.
           useHelmHooks: false
           jobAnnotations:
             argocd.argoproj.io/sync-wave: "-1"
+          serviceAccount:
+            annotations:
+              argocd.argoproj.io/sync-wave: "-1"
 
         # Airflow metadata database: the existing CloudNativePG "orders"
         # Cluster (gitops/data/postgres/cluster.yaml), a dedicated
