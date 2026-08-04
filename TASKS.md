@@ -101,8 +101,9 @@
   trade-off). Custom image (`apps/airflow/Dockerfile` +
   `airflow-ci.yml`) adds the Kafka provider; image tag is a manual
   placeholder pending first CI push (open risk for reviewer/human — see
-  PR). ADR-017..020. `helm template`/`yamllint`-equivalent (manual `yaml`
-  parse) clean; DAG `py_compile` clean. Branch `phase-7/airflow`.
+  PR). ADR-017..020. `helm template` rendered locally against the real
+  chart to confirm component/wave/env/volume wiring; DAG `py_compile`
+  clean; `gitleaks` clean. PR #38, branch `phase-7/airflow`.
 - [done] (technical-writer) Root `README.md` + `docs/order-flow.md` added,
   grounded in Phase 1-6 shipped state only (no Phase 7 components). Every
   diagram element checked against `gitops/`/`apps/src/` in this session;
