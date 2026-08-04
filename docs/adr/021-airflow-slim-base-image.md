@@ -78,12 +78,26 @@ remaining findings (rescanned locally with `trivy image
    webserver/scheduler/dag-processor/api-server. Same class as
    `service-ci.yml`'s `node:22-alpine`/npm precedent
    (`docs/phase-logs/phase-5.md`): scoped out via `.github/workflows/
-   airflow-ci.yml`'s `skip-files` (4 exact paths, not a directory-wide
-   `skip-dirs`, since these are individual bundled binaries).
+   airflow-ci.yml`'s `skip-files` (individual bundled binaries, not a
+   directory-wide `skip-dirs`).
+4. 3 Go stdlib CVEs (crypto/x509, os, mime) in `usr/bin/docker`, the
+   Docker CLI binary the base image bundles (present on both the default
+   and `slim` tags, confirmed in this session) — unrelated to
+   `apache-airflow-providers-docker` (not installed here; its Python SDK
+   talks to the Docker socket directly, not this CLI). Also confirmed
+   absent from `/entrypoint`. Found only in the second CI run, not the
+   first local scan: this session's local `trivy` CLI (v0.52.2) did not
+   detect it even after a DB refresh, while the CI pipeline's pinned
+   `aquasecurity/trivy-action@v0.36.0` (Trivy v0.70.0, per its own log)
+   did — a reminder that local pre-flight scans with an older Trivy
+   binary are not a substitute for the actual CI-pinned scanner version.
+   Scoped out via the same `skip-files` mechanism as (3).
 
-All three fixes were verified end-to-end against a locally built image
-(`docker build apps/airflow` + `trivy image --exit-code 1` +
-`skip-files`): clean pass, `Total: 0` on every remaining target.
+The Python-package and OS-package fixes (1-2) were verified locally
+(`docker build apps/airflow` + `trivy image --exit-code 1`); the two
+bundled-binary exclusions (3-4) were confirmed clean end-to-end only by
+the actual `airflow-ci` `scan` job on PR #38 (CI's Trivy v0.70.0, matching
+the version this gate actually runs).
 
 ## Decision
 

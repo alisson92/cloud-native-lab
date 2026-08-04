@@ -79,18 +79,27 @@ jobs:
           ignore-unfixed: true
           # apps/airflow/Dockerfile (see its header comment and
           # docs/adr/021-airflow-slim-base-image.md) closes every CVE this
-          # gate found except one: GHSA-4w2j-m93h-cj5j (quinn-proto, a
-          # transitive Rust dependency of the `uv`/`uvx` Python-packaging
-          # binaries the official apache/airflow image bundles at these 4
-          # paths). Confirmed in this session that the image's own
-          # /entrypoint never calls `uv`/`uvx`/`prek` — they sit on PATH as
-          # build/dev conveniences only, never invoked by the running
+          # gate found except a handful of bundled binaries the official
+          # apache/airflow image ships but never executes at runtime:
+          #   - GHSA-4w2j-m93h-cj5j (quinn-proto), in the `uv`/`uvx`
+          #     Python-packaging binaries at these 4 paths.
+          #   - 3 Go stdlib CVEs (crypto/x509, os, mime — DoS/symlink
+          #     issues) in usr/bin/docker, the Docker CLI binary the base
+          #     image bundles (present on both the default and `slim`
+          #     tags, confirmed in this session; unrelated to this
+          #     project's `apache-airflow-providers-docker`, which is not
+          #     installed here and talks to the Docker socket via its own
+          #     Python SDK, not this CLI).
+          # Confirmed in this session (`cat /entrypoint`) that none of
+          # `uv`/`uvx`/`prek`/`docker` are ever invoked by the image's own
+          # startup script — they sit on PATH as build/dev conveniences
+          # only, never called by the running
           # webserver/scheduler/dag-processor/api-server — so this is the
           # same class of upstream-base-image-bundled-but-unexercised
           # tooling as service-ci.yml's node:22-alpine/npm precedent
           # (docs/phase-logs/phase-5.md), not part of this image's actual
           # attack surface.
-          skip-files: /home/airflow/.local/bin/uv,/home/airflow/.local/bin/uvx,/home/airflow/.local/share/uv/tools/prek/bin/uv,/home/airflow/.local/share/uv/tools/prek/bin/uvx
+          skip-files: /home/airflow/.local/bin/uv,/home/airflow/.local/bin/uvx,/home/airflow/.local/share/uv/tools/prek/bin/uv,/home/airflow/.local/share/uv/tools/prek/bin/uvx,/usr/bin/docker
 
   push:
     needs: [build, scan]
