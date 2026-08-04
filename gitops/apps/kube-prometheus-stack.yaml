@@ -114,21 +114,56 @@ spec:
               cpu: 200m
               memory: 256Mi
           # The dashboards/datasources ConfigMap-watching sidecar
-          # (grafana-sc-dashboard / grafana-sc-datasources containers) is a
-          # separate container in the same pod, with its own resources
-          # field the chart never inherits from grafana.resources above.
-          # Chart default is `resources: {}` (no limits, grafana subchart
-          # values.yaml line ~1048, `sidecar.resources`). Sized smaller than
-          # the main Grafana container: it only polls the Kubernetes API
-          # for labelled ConfigMaps and writes them to a shared volume.
+          # (grafana-sc-dashboard / grafana-sc-datasources containers, plus
+          # their init-container counterparts) is a separate container in
+          # the same pod, with its own resources field the chart never
+          # inherits from grafana.resources above — one `sidecar.resources`
+          # block (grafana subchart values.yaml line ~1048) is templated
+          # into all of them identically (charts/grafana/templates/_pod.tpl,
+          # every sc-dashboard/sc-datasources container block uses the same
+          # `{{- with .Values.sidecar.resources }}`), confirmed via `helm
+          # pull ... --untar` in this session against chart 88.1.3's pinned
+          # grafana subchart (12.10.1). Chart default is `resources: {}`
+          # (no limits).
+          #
+          # LIVE-TESTED AND FOUND INSUFFICIENT: the original 64Mi limit set
+          # here shipped in PR #36 was disproven on the operator's running
+          # Kind cluster — `kubectl get pod -n monitoring -l
+          # app.kubernetes.io/name=grafana` showed both sidecar containers
+          # with 172+ restarts, and
+          # `.status.containerStatuses[*].lastState` confirmed
+          # `reason: OOMKilled, exitCode: 137` on both. `kubectl top` isn't
+          # available on this Kind cluster (no metrics-server), so there is
+          # no live peak-memory reading; the 64Mi guess undershot real
+          # usage of the sidecar image itself
+          # (`quay.io/kiwigrid/k8s-sidecar`, tag 2.10.0, confirmed in the
+          # grafana subchart's own values.yaml `sidecar.image`), which
+          # polls the Kubernetes API for every ConfigMap/Secret matching
+          # its watch label (2+ already from this chart's own bundled
+          # default dashboards/datasources, growing as more are added) and
+          # copies matching content into a shared volume.
+          #
+          # New limit grounded in two documented data points instead of a
+          # second guess: (1) the grafana chart's own commented-out example
+          # in values.yaml right next to `sidecar.resources: {}` suggests
+          # 100Mi as a limit, itself close to what live-tested-failed here;
+          # (2) kiwigrid/k8s-sidecar's own issue tracker
+          # (https://github.com/kiwigrid/k8s-sidecar/issues/462) reports
+          # ~189Mi steady-state RSS for the 2.x sidecar line (vs. ~80Mi on
+          # the older 1.30.x line) — the same major version line as this
+          # chart's pinned 2.10.0 tag. 256Mi leaves headroom above that
+          # reported figure instead of sitting right at it. Requests raised
+          # proportionally (not left at the failed limit) since actual
+          # steady-state usage, not just burst, sits well above the old
+          # 32Mi/64Mi pair.
           sidecar:
             resources:
               requests:
                 cpu: 25m
-                memory: 32Mi
+                memory: 128Mi
               limits:
                 cpu: 100m
-                memory: 64Mi
+                memory: 256Mi
           # defaultDashboardsEnabled (chart default: true) and
           # sidecar.dashboards.enabled (chart default: true) are left
           # untouched: these are what make the Phase 7 exit gate
