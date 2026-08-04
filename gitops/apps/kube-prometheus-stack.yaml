@@ -113,6 +113,22 @@ spec:
             limits:
               cpu: 200m
               memory: 256Mi
+          # The dashboards/datasources ConfigMap-watching sidecar
+          # (grafana-sc-dashboard / grafana-sc-datasources containers) is a
+          # separate container in the same pod, with its own resources
+          # field the chart never inherits from grafana.resources above.
+          # Chart default is `resources: {}` (no limits, grafana subchart
+          # values.yaml line ~1048, `sidecar.resources`). Sized smaller than
+          # the main Grafana container: it only polls the Kubernetes API
+          # for labelled ConfigMaps and writes them to a shared volume.
+          sidecar:
+            resources:
+              requests:
+                cpu: 25m
+                memory: 32Mi
+              limits:
+                cpu: 100m
+                memory: 64Mi
           # defaultDashboardsEnabled (chart default: true) and
           # sidecar.dashboards.enabled (chart default: true) are left
           # untouched: these are what make the Phase 7 exit gate
