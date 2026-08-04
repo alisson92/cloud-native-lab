@@ -179,6 +179,13 @@ data:
         aggregate_task = PythonOperator(
             task_id="aggregate_daily_sales",
             python_callable=aggregate_daily_sales,
+            # Live-tested TypeError: aggregate_daily_sales() missing 1
+            # required positional argument: 'ds' — PythonOperator does not
+            # auto-inject context variables as positional/keyword args by
+            # signature-name matching; they must be passed explicitly via
+            # op_kwargs (the documented pattern, confirmed against
+            # https://airflow.apache.org/docs/apache-airflow-providers-standard/stable/operators/python.html).
+            op_kwargs={"ds": "{{ ds }}"},
         )
 
         consume_task = ConsumeFromTopicOperator(
