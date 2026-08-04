@@ -92,16 +92,14 @@
   single replicas, explicit resources/limits everywhere, no PVC (emptyDir,
   same trade-off as ADR-007/011). ADR-016. `helm template` validated
   clean. Follow-up noted for reviewer: app tier has no `/metrics`/
-  ServiceMonitor yet — out of scope here. Merged PR #36. Airflow half
-  (PR #38) still open.
-- [review] (platform-engineer) Airflow via GitOps (`gitops/apps/airflow.yaml`,
+  ServiceMonitor yet — out of scope here. Merged PR #36.
+- [done] (platform-engineer) Airflow via GitOps (`gitops/apps/airflow.yaml`,
   chart 1.22.0/Airflow 3.2.2, LocalExecutor) + nightly `sales_report` DAG
   (Postgres aggregate + Kafka event-count, ConfigMap-delivered). New
   CloudNativePG `Database`/role (reused cluster) and Kafka `KafkaUser`
-  "airflow" (replaces gate-verifier). Tag is a manual placeholder pending
-  first CI push (open risk — see PR). ADR-017..020. 1 fix round:
-  log-groomer sidecar resources + smoke-test runbook refs. `helm template`/
-  `gitleaks` clean. PR #38, branch `phase-7/airflow`.
+  "airflow" (replaces gate-verifier). ADR-017..020. Merged PR #38. Image
+  tag bump is now automated (ADR-013 pattern extended to this file's
+  nested Helm `images.airflow.tag`) — PR #39, human still merges.
 - [done] (security-engineer) Fixed PR #38's `airflow-ci` Trivy CRITICAL/
   HIGH failures: `apps/airflow/Dockerfile` base switched
   `apache/airflow:3.2.2` -> `slim-3.2.2` (default-image's Google/Amazon
