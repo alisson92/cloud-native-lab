@@ -64,6 +64,28 @@ spec:
         # that works").
         executor: "LocalExecutor"
 
+        # BUG FOUND LIVE (post-merge, see TASKS.md), same deadlock class as
+        # the serviceAccount fix on migrateDatabaseJob/createUserJob below,
+        # a different dependency: the chart's own `airflow-config` ConfigMap
+        # (rendered by templates/configmaps/configmap.yaml from
+        # `config`/`airflowLocalSettings` below) has no wave annotation by
+        # default, so it defaults to wave "0" — LATER than
+        # migrateDatabaseJob's wave "-2". Every Airflow container (including
+        # both Jobs') mounts it at `/opt/airflow/airflow.cfg` via the
+        # chart's own `airflow_config_mount` helper, confirmed live:
+        # `FailedMount ... configmap "airflow-config" not found` stuck the
+        # migration pod in ContainerCreating forever, blocking every later
+        # wave the same way the ServiceAccount bug did. Fix: the chart
+        # exposes a top-level `airflowConfigAnnotations` field (confirmed
+        # against
+        # https://raw.githubusercontent.com/apache/airflow/helm-chart/1.22.0/chart/values.yaml,
+        # applied to this ConfigMap by
+        # templates/configmaps/configmap.yaml) — annotated with
+        # migrateDatabaseJob's wave "-2" (its earliest consumer), which also
+        # satisfies createUserJob's later wave "-1".
+        airflowConfigAnnotations:
+          argocd.argoproj.io/sync-wave: "-2"
+
         images:
           airflow:
             repository: ghcr.io/alisson92/airflow
