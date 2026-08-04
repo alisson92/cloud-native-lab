@@ -84,7 +84,7 @@
 
 ## Phase 7 — Operations
 
-- [review] (platform-engineer) kube-prometheus-stack via GitOps
+- [done] (platform-engineer) kube-prometheus-stack via GitOps
   (`gitops/apps/kube-prometheus-stack.yaml`), local Kind only (ADR-004).
   Chart 88.1.3: Prometheus+Grafana+kube-state-metrics+node-exporter kept
   (default dashboards satisfy "dashboards live"), Alertmanager disabled
@@ -92,7 +92,13 @@
   single replicas, explicit resources/limits everywhere, no PVC (emptyDir,
   same trade-off as ADR-007/011). ADR-016. `helm template` validated
   clean. Follow-up noted for reviewer: app tier has no `/metrics`/
-  ServiceMonitor yet — out of scope here. Airflow half done separately.
+  ServiceMonitor yet — out of scope here. Merged PR #36. Airflow half
+  (PR #38) still open.
+- [done] (technical-writer) Root `README.md` + `docs/order-flow.md` added,
+  grounded in Phase 1-6 shipped state only (no Phase 7 components). Every
+  diagram element checked against `gitops/`/`apps/src/` in this session;
+  ADR-007/009/011/012/015 outcomes reflected. Branch:
+  `docs/readme-and-diagrams`.
 
 ## Log
 
