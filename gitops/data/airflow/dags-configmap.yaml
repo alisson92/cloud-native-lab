@@ -130,8 +130,24 @@ data:
     """
 
 
-    def aggregate_daily_sales(ds: str, **_context) -> None:
+    def aggregate_daily_sales(**context) -> None:
         """Snapshot orders-by-product revenue into `sales_reports`."""
+        # Live-tested UndefinedError: 'ds' is undefined -- op_kwargs'
+        # Jinja rendering of "{{ ds }}" fails whenever a run has no
+        # logical_date, which happens for `airflow dags trigger` without
+        # an explicit `--logical-date` (not just asset-triggered Dags, per
+        # https://airflow.apache.org/docs/apache-airflow/stable/templates-ref.html's
+        # note on missing time-based context). The real nightly schedule
+        # ("0 2 * * *" below) always has a logical_date, but deriving
+        # report_date defensively from `dag_run` (always present in
+        # **context, confirmed on the same docs page) instead of Jinja
+        # templating makes this correct for both cases, matching this
+        # DAG's own documented "full-history snapshot" semantics (see
+        # module docstring: report_date is a label for the snapshot, not
+        # a query filter).
+        logical_date = context["dag_run"].logical_date
+        report_date = (logical_date or pendulum.now("UTC")).to_date_string()
+
         hook = PostgresHook(postgres_conn_id=ORDERS_CONN_ID)
         hook.run(SALES_REPORT_DDL)
         rows = hook.get_records(AGGREGATE_SQL)
@@ -139,7 +155,7 @@ data:
             hook.run(
                 INSERT_REPORT_ROW_SQL,
                 parameters={
-                    "report_date": ds,
+                    "report_date": report_date,
                     "product_id": product_id,
                     "product_name": product_name,
                     "order_count": order_count,
@@ -179,13 +195,11 @@ data:
         aggregate_task = PythonOperator(
             task_id="aggregate_daily_sales",
             python_callable=aggregate_daily_sales,
-            # Live-tested TypeError: aggregate_daily_sales() missing 1
-            # required positional argument: 'ds' — PythonOperator does not
-            # auto-inject context variables as positional/keyword args by
-            # signature-name matching; they must be passed explicitly via
-            # op_kwargs (the documented pattern, confirmed against
-            # https://airflow.apache.org/docs/apache-airflow-providers-standard/stable/operators/python.html).
-            op_kwargs={"ds": "{{ ds }}"},
+            # PythonOperator always passes the execution context as
+            # kwargs when the callable accepts **kwargs (no op_kwargs
+            # needed) -- see aggregate_daily_sales' own docstring for why
+            # report_date is derived from context["dag_run"] instead of
+            # Jinja-templating "{{ ds }}" here.
         )
 
         consume_task = ConsumeFromTopicOperator(
