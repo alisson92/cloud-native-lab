@@ -90,9 +90,15 @@ spec:
           airflow:
             repository: ghcr.io/alisson92/airflow
             # Bumped automatically by airflow-ci.yml's bump-gitops job — see
-            # this file's header comment. Placeholder until the first
-            # post-automation push to main lands (open PR bumps it).
-            tag: "REPLACE_WITH_PUSHED_SHA"
+            # this file's header comment. This one-time value is a manual
+            # catch-up bump: the image was built and pushed by the
+            # `airflow-ci` push-event run on PR #38's merge commit
+            # (4689ac133c823ec778bda25a310b135e41e9eb5a, confirmed present
+            # in ghcr.io via `docker manifest inspect` in this session),
+            # before the bump-gitops job existed (added later in PR #39) —
+            # so no automated PR was ever opened for it. Every future
+            # `apps/airflow/**` change bumps this automatically.
+            tag: "4689ac133c823ec778bda25a310b135e41e9eb5a"
 
         # Disabled: none of these are needed by LocalExecutor and each is a
         # whole extra workload on this single-node Kind host (docs/adr/017).
