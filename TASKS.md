@@ -96,14 +96,13 @@
 - [review] (platform-engineer) Airflow via GitOps (`gitops/apps/airflow.yaml`,
   chart 1.22.0/Airflow 3.2.2, LocalExecutor) + nightly `sales_report` DAG
   (Postgres aggregate + Kafka event-count, ConfigMap-delivered). New
-  CloudNativePG `Database`/managed role (reused cluster) and Kafka
-  `KafkaUser` "airflow" (replaces gate-verifier, ADR-015's own accepted
-  trade-off). Custom image (`apps/airflow/Dockerfile` +
-  `airflow-ci.yml`) adds the Kafka provider; image tag is a manual
-  placeholder pending first CI push (open risk for reviewer/human — see
-  PR). ADR-017..020. `helm template` rendered locally against the real
-  chart to confirm component/wave/env/volume wiring; DAG `py_compile`
-  clean; `gitleaks` clean. PR #38, branch `phase-7/airflow`.
+  CloudNativePG `Database`/role (reused cluster) and Kafka `KafkaUser`
+  "airflow" (replaces gate-verifier). Custom image adds the Kafka
+  provider; tag is a manual placeholder pending first CI push (open risk
+  — see PR). ADR-017..020. 1 fix round: log-groomer sidecar resources
+  (scheduler+dagProcessor) + smoke-test runbook's gate-verifier refs, both
+  confirmed via `helm template`. `helm template`/`gitleaks` clean. PR #38,
+  branch `phase-7/airflow`.
 - [done] (technical-writer) Root `README.md` + `docs/order-flow.md` added,
   grounded in Phase 1-6 shipped state only (no Phase 7 components). Every
   diagram element checked against `gitops/`/`apps/src/` in this session;
