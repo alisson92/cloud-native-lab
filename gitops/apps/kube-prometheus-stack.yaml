@@ -1,0 +1,199 @@
+# kube-prometheus-stack, via the official prometheus-community Helm chart
+# (Phase 7, docs/architecture.md "Operations" layer: "kube-prometheus-stack").
+#
+# Unlike CloudNativePG/Strimzi (operator manifest here, workload CR under
+# gitops/data/), this chart's own values already deploy the full stack
+# (Prometheus Operator + a Prometheus CR + Grafana + kube-state-metrics +
+# node-exporter) in one release — there is no separate workload CR this lab
+# needs to author, so one Application manifest is enough here.
+#
+# Sized for a single-node Kind host (5 CPU / 15.6GiB, Docker/WSL2 backend)
+# already running Vault, ESO, CloudNativePG, Redis, RabbitMQ, Kafka/Strimzi,
+# the four application-tier services, and (in parallel) Airflow — a real,
+# not hypothetical, resource ceiling. See
+# docs/adr/016-kube-prometheus-stack-lab-sizing.md for the alertmanager/
+# retention/sizing trade-offs made below.
+#
+# Docs consulted:
+# - https://github.com/prometheus-community/helm-charts/blob/main/charts/kube-prometheus-stack/values.yaml
+#   (chart version 88.1.3, appVersion v0.93.0, confirmed live via
+#   `helm search repo prometheus-community/kube-prometheus-stack --versions`
+#   against https://prometheus-community.github.io/helm-charts; values
+#   inspected via `helm pull ... --untar` in this session, not guessed)
+# - https://argo-cd.readthedocs.io/en/stable/user-guide/helm/
+#   (Helm chart repository as an Application source)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  annotations:
+    # Sync wave "0", same layer as the other operator-shaped Applications
+    # under gitops/apps/ (vault.yaml, cloudnativepg-operator.yaml,
+    # strimzi.yaml, external-secrets.yaml). No gitops/data/ resources depend
+    # on this one, but wave "0" keeps it consistent with that convention.
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 88.1.3
+    helm:
+      valuesObject:
+        # Alertmanager is chart-default-enabled but nothing in this lab
+        # sends it a receiver/route (no email/Slack/webhook target
+        # configured anywhere), so a running Alertmanager with no
+        # destination is speculative complexity with no consumer — see
+        # docs/adr/016-kube-prometheus-stack-lab-sizing.md.
+        alertmanager:
+          enabled: false
+
+        prometheusOperator:
+          # Requests/limits mandatory per docs/conventions.md. Chart
+          # default is `resources: {}` (no limits at all, confirmed via
+          # `helm pull ... --untar` in this session, values.yaml line
+          # ~3412). The operator reconciles one Prometheus CR and a
+          # handful of ServiceMonitors here, well below the chart's own
+          # commented-out example (200m/200Mi limit).
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+
+        prometheus:
+          prometheusSpec:
+            # Chart default is 1 (values.yaml ~line 4589); explicit here
+            # for readability. A single-node Kind host cannot usefully
+            # schedule a second replica anyway.
+            replicas: 1
+            # Chart default is 10d (values.yaml ~line 4567). This lab's
+            # cluster is ephemeral (docs/adr/004) and routinely destroyed/
+            # recreated, so multi-day retention has no consumer — trimmed
+            # to keep the TSDB's on-disk (emptyDir, no PVC — see below)
+            # footprint small. See ADR-016.
+            retention: 24h
+            # Requests/limits mandatory per docs/conventions.md. Chart
+            # default is `resources: {}` (no limits). Prometheus scrapes a
+            # small, fixed set of targets in this lab (kube-state-metrics,
+            # node-exporter x1, the Prometheus Operator, kubelet/cAdvisor,
+            # apiserver) — sized above the smaller operators in this repo
+            # since Prometheus itself is the workload doing the scraping
+            # and holding the TSDB in memory, but still conservative.
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+            # No storageSpec set: TSDB lives on the pod's default emptyDir,
+            # same "no PVC for ephemeral/non-source-of-truth data" trade-off
+            # already accepted for Redis (docs/adr/007) and RabbitMQ
+            # (docs/adr/011) in this repo — metrics history is disposable,
+            # not the platform's source of truth.
+
+        grafana:
+          # Chart default is 1 (grafana subchart values.yaml line 51);
+          # explicit here for readability — same single-node-host reasoning
+          # as prometheus.prometheusSpec.replicas above.
+          replicas: 1
+          # Requests/limits mandatory per docs/conventions.md. Chart
+          # default is `resources: {}` (no limits, grafana subchart
+          # values.yaml line ~427).
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          # The dashboards/datasources ConfigMap-watching sidecar
+          # (grafana-sc-dashboard / grafana-sc-datasources containers) is a
+          # separate container in the same pod, with its own resources
+          # field the chart never inherits from grafana.resources above.
+          # Chart default is `resources: {}` (no limits, grafana subchart
+          # values.yaml line ~1048, `sidecar.resources`). Sized smaller than
+          # the main Grafana container: it only polls the Kubernetes API
+          # for labelled ConfigMaps and writes them to a shared volume.
+          sidecar:
+            resources:
+              requests:
+                cpu: 25m
+                memory: 32Mi
+              limits:
+                cpu: 100m
+                memory: 64Mi
+          # defaultDashboardsEnabled (chart default: true) and
+          # sidecar.dashboards.enabled (chart default: true) are left
+          # untouched: these are what make the Phase 7 exit gate
+          # ("dashboards are live") true out of the box, no custom
+          # dashboard authoring needed.
+          # No persistence block set: chart default is disabled, so
+          # Grafana's own sqlite config store lives on emptyDir. Losing it
+          # on pod restart only means re-provisioning the same
+          # chart-shipped default dashboards from their ConfigMaps, not
+          # data loss — same ephemeral-by-design trade-off as above.
+
+        kubeStateMetrics:
+          enabled: true
+
+        # Requests/limits mandatory per docs/conventions.md. Chart default
+        # is `resources: {}` (no limits, kube-state-metrics subchart
+        # values.yaml line ~498). This is a single low-traffic Deployment
+        # exposing cluster object state as metrics.
+        kube-state-metrics:
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+
+        nodeExporter:
+          enabled: true
+
+        # Requests/limits mandatory per docs/conventions.md. Chart default
+        # is `resources: {}` (no limits, prometheus-node-exporter subchart
+        # values.yaml line ~334). Runs as a DaemonSet, but Kind here is a
+        # single-node (control-plane only) cluster, so this is exactly one
+        # pod in practice (local/kind/kind-config.yaml has no worker
+        # nodes).
+        prometheus-node-exporter:
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Namespace does not pre-exist; Argo CD creates it (documented sync
+      # option, not a manually kubectl-applied namespace).
+      - CreateNamespace=true
+      # The monitoring.coreos.com CRDs (Prometheus, Alertmanager,
+      # ServiceMonitor, PrometheusRule, ...) are the largest CRDs in this
+      # repo (crd-prometheuses.yaml alone is ~816KB, confirmed via `helm
+      # pull ... --untar` in this session) — the same class of issue
+      # documented in gitops/apps/cloudnativepg-operator.yaml and
+      # gitops/apps/external-secrets.yaml: client-side apply's
+      # last-applied-configuration annotation exceeds Kubernetes' 256KiB
+      # annotation limit. Server-Side Apply avoids this by tracking field
+      # ownership server-side instead.
+      # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-options/#server-side-apply
+      - ServerSideApply=true
