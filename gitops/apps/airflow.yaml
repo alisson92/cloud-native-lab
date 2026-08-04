@@ -86,6 +86,29 @@ spec:
         airflowConfigAnnotations:
           argocd.argoproj.io/sync-wave: "-2"
 
+        # THIRD live-only finding of the same deadlock class (see the
+        # ConfigMap comment above and the ServiceAccount fix on
+        # migrateDatabaseJob/createUserJob below): the chart's
+        # auto-generated `airflow-api-secret-key` Secret (`apiSecretKey: ~`
+        # triggers chart-side generation) is a plain `Sync/0` resource, NOT
+        # a Helm PreSync hook — confirmed live via
+        # `kubectl -n argocd logs argocd-application-controller-0`'s sync
+        # task list, and via a live `Error: secret "airflow-api-secret-key"
+        # not found` on migrateDatabaseJob's pod (it sets
+        # `AIRFLOW__API__SECRET_KEY` from this secret). `apiSecretAnnotations`
+        # (confirmed field name against
+        # https://raw.githubusercontent.com/apache/airflow/helm-chart/1.22.0/chart/values.yaml)
+        # bumps it to migrateDatabaseJob's wave. `jwtSecretAnnotations` is
+        # bumped alongside it pre-emptively: same chart-generation pattern,
+        # not yet confirmed required by a live failure, but createUserJob
+        # (wave "-1") calls into the same Airflow API-auth code path this
+        # secret backs, so waiting for a fourth live round to prove it is
+        # unnecessary risk for a one-line, zero-cost annotation.
+        apiSecretAnnotations:
+          argocd.argoproj.io/sync-wave: "-2"
+        jwtSecretAnnotations:
+          argocd.argoproj.io/sync-wave: "-2"
+
         images:
           airflow:
             repository: ghcr.io/alisson92/airflow
