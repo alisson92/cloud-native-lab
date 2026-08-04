@@ -280,10 +280,18 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 64Mi
+              memory: 128Mi
             limits:
               cpu: 100m
-              memory: 128Mi
+              memory: 256Mi
+          # Live-tested OOMKilled at the original 128Mi limit (exitCode 137,
+          # confirmed via `.status.containerStatuses[0].lastState` on the
+          # live pod) — `airflow users create` runs the full FAB
+          # auth-manager CLI against the Flask app context, same
+          # memory-class operation as migrateDatabaseJob's `airflow db
+          # migrate` (already sized at 256Mi/128Mi below), so this job is
+          # brought in line with that already-working value instead of
+          # tuning a second, smaller number by trial and error.
           # Same ArgoCD-hooks rationale as migrateDatabaseJob above. Wave
           # "-1": after the DB migration (wave "-2", the `users` table must
           # exist first) but still before the default-wave "0"
