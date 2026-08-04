@@ -223,6 +223,23 @@ kubectl -n kafka delete pod kafka-consumer --ignore-not-found=true
 topic's retention started, including the order from step 6, e.g.
 `{"type":"order.created","order":{"id":<N>,"productId":1,"quantity":1,"totalCents":1299}}`.
 
+> ⚠️ **Not an error:** the log output will also show a line like
+> `[ERROR] Error processing message, terminating consumer process:
+> org.apache.kafka.common.errors.TimeoutException`, right after the
+> JSON message(s) and before `Processed a total of N messages`. This is
+> the intended, documented exit mechanism for `--timeout-ms`, not a
+> consumption failure. Per Apache Kafka's own tool source, the flag's
+> help text reads: *"If specified, exit if no message is available for
+> consumption for the specified interval"* — `--timeout-ms 15000` means
+> "if 15 seconds pass with no new message, exit," and it throws a
+> `TimeoutException` (logged at `ERROR` level) to do so once no more
+> messages are pending. As long as `Processed a total of N messages`
+> shows `N >= 1` and the expected JSON line(s) appeared above it, the
+> test succeeded.
+> ([`ConsoleConsumerOptions.java`, `apache/kafka`](https://github.com/apache/kafka/blob/trunk/tools/src/main/java/org/apache/kafka/tools/consumer/ConsoleConsumerOptions.java);
+> also tracked as a known logging-level quirk in
+> [KAFKA-8789](https://issues.apache.org/jira/browse/KAFKA-8789).)
+
 ---
 
 ### 8. Cleanup
@@ -263,6 +280,7 @@ place.
 | Kafka consumer fails with `GroupAuthorizationException` | Consuming with the `backend` identity, which is producer-only by design | Use `gate-verifier`'s credentials instead (step 7), never `backend`'s |
 | Kafka consumer fails with `SaslAuthenticationException` | `KafkaUser` reconcile never completed (see prior row), or wrong password fetched | Re-check `kafkauser` status; re-fetch the password from the correct `Secret` |
 | `curl` to `/orders` hangs or connection-refused | `port-forward` not established, or `backend` pod not `Running`/`Ready` | `kubectl -n apps get pod`, `kubectl -n apps logs deploy/backend` |
+| Kafka consumer log ends with `[ERROR] ... TimeoutException` after printing the expected JSON message(s) | **Not an error** — `--timeout-ms`'s documented exit mechanism firing after 15s of no new messages (see step 7's note) | None — check `Processed a total of N messages` shows `N >= 1` and move on |
 
 ---
 
