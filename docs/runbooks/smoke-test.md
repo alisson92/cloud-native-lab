@@ -152,7 +152,7 @@ kubectl -n secrets-demo get pod
 
 ```bash
 kubectl -n kafka get kafka kafka
-kubectl -n kafka get kafkauser backend gate-verifier
+kubectl -n kafka get kafkauser backend airflow
 kubectl -n kafka get kafkatopic order-events
 ```
 
@@ -189,15 +189,21 @@ consumed it.
 
 ### 7. Confirm Kafka consumption
 
-Uses the `gate-verifier` `KafkaUser` (`gitops/data/kafka/gate-verifier-user.yaml`)
-— a dedicated read-only identity scoped to `order-events`, created
-specifically for this kind of ad-hoc verification (see
-`docs/adr/015-kafka-gate-verifier-user.md`). It does not have write
-access, and the `backend` service account is intentionally *not* used
-here since it is producer-only.
+Uses the `airflow` `KafkaUser` (`gitops/data/kafka/airflow-user.yaml`) — a
+dedicated read-only identity scoped to `order-events`, this repo's real
+Phase 7 ETL consumer (`gitops/data/airflow/dags-configmap.yaml`'s
+`sales_report` DAG), reused here for ad-hoc verification too. It does not
+have write access, and the `backend` service account is intentionally
+*not* used here since it is producer-only. This identity is
+Vault-sourced (`docs/adr/012-kafka-strimzi-kraft-and-vault-user.md`'s
+pattern), unlike the Phase 6 `gate-verifier` `KafkaUser` it replaces
+(removed — Strimzi-generated password, see
+`docs/adr/015-kafka-gate-verifier-user.md`'s accepted trade-off), so the
+password comes from the ExternalSecret-produced `airflow-kafka-credentials`
+Secret, not a Strimzi-managed one.
 
 ```bash
-GATE_PASSWORD=$(kubectl -n kafka get secret gate-verifier \
+AIRFLOW_KAFKA_PASSWORD=$(kubectl -n kafka get secret airflow-kafka-credentials \
   -o jsonpath='{.data.password}' | base64 -d)
 
 kubectl -n kafka delete pod kafka-consumer --ignore-not-found=true --wait=true >/dev/null 2>&1
@@ -209,15 +215,35 @@ kubectl -n kafka run kafka-consumer --restart=Never \
   --topic order-events \
   --from-beginning \
   --timeout-ms 15000 \
-  --group gate-verifier \
+  --group airflow-sales-report \
   --consumer-property security.protocol=SASL_PLAINTEXT \
   --consumer-property sasl.mechanism=SCRAM-SHA-512 \
-  --consumer-property "sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=\"gate-verifier\" password=\"${GATE_PASSWORD}\";"
+  --consumer-property "sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=\"airflow\" password=\"${AIRFLOW_KAFKA_PASSWORD}\";"
 
 sleep 20
 kubectl -n kafka logs kafka-consumer
 kubectl -n kafka delete pod kafka-consumer --ignore-not-found=true
 ```
+
+> **Consumer group must be `airflow-sales-report`, not a throwaway name:**
+> the `airflow` `KafkaUser`'s ACL grants `Read` on exactly one, literal
+> consumer group id — `airflow-sales-report`
+> (`gitops/data/kafka/airflow-user.yaml`), the same group the real
+> `sales_report` DAG's `ConsumeFromTopicOperator` uses
+> (`gitops/data/airflow/externalsecret-kafka-connection.yaml`'s
+> `group.id`). Any other `--group` value fails with
+> `GroupAuthorizationException` (see Troubleshooting below) — least
+> privilege means this identity cannot join an arbitrary group.
+>
+> **Side effect:** because this console consumer does not set
+> `enable.auto.commit=false`, running this step commits offsets into the
+> SAME group the nightly DAG consumes from — the next `sales_report` run
+> will only see events published *after* this smoke test ran. Harmless
+> for a lab (the DAG's own Postgres aggregate, `sales_reports`, is
+> unaffected either way — see
+> `docs/adr/020-airflow-kafka-postgres-source-split.md`), but worth
+> knowing before running this step right before a real DAG verification
+> (`gitops/data/airflow/README.md`).
 
 **Expected result:** one JSON line per order ever placed since the
 topic's retention started, including the order from step 6, e.g.
@@ -252,7 +278,7 @@ kill %1 2>/dev/null  # stops the port-forward started in step 6
 - [ ] `root-app` `Synced`/`Healthy`
 - [ ] Every `SecretStore`/`ExternalSecret` synced
 - [ ] Every pod `Running`
-- [ ] `Kafka`, `backend` and `gate-verifier` `KafkaUser`s, and
+- [ ] `Kafka`, `backend` and `airflow` `KafkaUser`s, and
       `order-events` topic all `Ready`
 - [ ] Order placed successfully via `curl`
 - [ ] Worker log shows the order consumed from RabbitMQ
@@ -277,7 +303,7 @@ place.
 | `root-app` `NotFound` | `root-app` Application object was pruned (see ADR-014) | `kubectl apply -f gitops/root-app.yaml` |
 | `root-app` stuck `Degraded` for several minutes with every child resource actually healthy | Argo CD controller cache cold after a node/pod restart | Wait, then check `argocd app get root-app --core` for real per-resource health instead of the `Application` CR's summary |
 | `KafkaUser` not `Ready`, error mentions "authorization ACL rules ... not supported" | `Kafka` CR missing `spec.kafka.authorization` (should already be fixed — PR #28) | Confirm `gitops/data/kafka/cluster.yaml` has `authorization: {type: simple}`; if reverted, restore it |
-| Kafka consumer fails with `GroupAuthorizationException` | Consuming with the `backend` identity, which is producer-only by design | Use `gate-verifier`'s credentials instead (step 7), never `backend`'s |
+| Kafka consumer fails with `GroupAuthorizationException` | Consuming with the `backend` identity (producer-only by design), or the `airflow` identity with a `--group` other than `airflow-sales-report` (its ACL is scoped to that one literal group name) | Use `airflow`'s credentials with `--group airflow-sales-report` (step 7); never `backend`'s |
 | Kafka consumer fails with `SaslAuthenticationException` | `KafkaUser` reconcile never completed (see prior row), or wrong password fetched | Re-check `kafkauser` status; re-fetch the password from the correct `Secret` |
 | `curl` to `/orders` hangs or connection-refused | `port-forward` not established, or `backend` pod not `Running`/`Ready` | `kubectl -n apps get pod`, `kubectl -n apps logs deploy/backend` |
 | Kafka consumer log ends with `[ERROR] ... TimeoutException` after printing the expected JSON message(s) | **Not an error** — `--timeout-ms`'s documented exit mechanism firing after 15s of no new messages (see step 7's note) | None — check `Processed a total of N messages` shows `N >= 1` and move on |
@@ -294,6 +320,9 @@ place.
 - `docs/adr/012-kafka-strimzi-kraft-and-vault-user.md`,
   `docs/adr/015-kafka-gate-verifier-user.md` — Kafka authentication/
   authorization design
+- `gitops/data/airflow/README.md`, `docs/adr/020-airflow-kafka-postgres-source-split.md`
+  — the real Phase 7 `airflow` Kafka consumer this runbook's step 7 now
+  uses in place of the removed `gate-verifier` identity
 - `docs/adr/014-exclude-root-app-from-self-recursion.md` — the
   `root-app` self-deletion incident and recovery
 - `docs/runbooks/browser-order-flow-walkthrough.md` — the same order

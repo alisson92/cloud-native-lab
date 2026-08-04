@@ -7,6 +7,13 @@ credential ever written to Git. See
 `docs/adr/008-postgres-operator-proportionality.md` for why the operator
 was chosen.
 
+Phase 7 (`docs/phases.md`) adds a second database, "airflow", to this SAME
+Cluster (`airflow-database.yaml`, a `spec.managed.roles` entry in
+`cluster.yaml`, and `airflow-role-externalsecret.yaml`) instead of a second
+CloudNativePG instance — see
+`docs/adr/019-airflow-metadata-db-shared-cluster.md` and
+`gitops/data/airflow/README.md`.
+
 ## One-time Vault bootstrap (script, not GitOps — see why below)
 
 Same reasoning as `gitops/secrets-demo/README.md`: Vault dev-mode
@@ -23,8 +30,10 @@ restart (see `docs/adr/006-vault-dev-mode-for-lab.md` and
 `docs/adr/010-vault-bootstrap-script.md`). It writes the Postgres app-user
 credentials (`username=orders`, matching `cluster.yaml`'s
 `spec.bootstrap.initdb.owner` — CloudNativePG requires this match), the
-`postgres-read` policy, and the `postgres` role, along with
-secrets-demo/Redis/backend's setup in the same run:
+`postgres-read` policy (extended in Phase 7 to also read
+`secret/data/airflow`, for `airflow-role-externalsecret.yaml`), and the
+`postgres` role, along with secrets-demo/Redis/backend/airflow's setup in
+the same run:
 
 ```sh
 ./scripts/bootstrap-vault.sh

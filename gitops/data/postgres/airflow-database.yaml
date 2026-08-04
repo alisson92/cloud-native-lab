@@ -1,0 +1,46 @@
+# CloudNativePG Database CRD (Phase 7): declares a second database,
+# "airflow", inside the SAME "orders" Cluster this directory already
+# manages — docs/adr/019-airflow-metadata-db-shared-cluster.md.
+#
+# spec.owner: "airflow" — the managed role declared in cluster.yaml's
+# `spec.managed.roles`, credentialed via
+# airflow-role-externalsecret.yaml/Vault path "secret/airflow" (the same
+# credential gitops/data/airflow/externalsecret-metadata-db.yaml uses to
+# build Airflow's `AIRFLOW__DATABASE__SQL_ALCHEMY_CONN` connection
+# string — CloudNativePG requires this match, same rule as
+# `bootstrap.initdb.owner` for the "orders" database).
+#
+# spec.cluster.name: "postgres" — this directory's existing Cluster CR.
+#
+# No `extensions`/`schemas`/`ensure` overrides: this database has no
+# requirement beyond existing with the right owner; Airflow's own
+# `migrateDatabaseJob` (`airflow db migrate`) creates every table it
+# needs inside it.
+#
+# Docs consulted:
+# - https://cloudnative-pg.io/docs/1.27/declarative_database_management/
+#   (Database CRD: apiVersion postgresql.cnpg.io/v1, spec.name/owner/
+#   cluster.name; CloudNativePG "manages global objects... such as
+#   databases, roles... but does not manage the content of databases")
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: airflow
+  namespace: postgres
+  annotations:
+    # Sync wave "3": after the Cluster CR (wave "2") is reconciling — the
+    # Database CRD's own controller needs the Cluster's primary reachable,
+    # and the "airflow" managed role (declared inline in cluster.yaml,
+    # reconciled as part of the same wave "2" Cluster resource) to already
+    # exist as this Database's owner. Same "CR that depends on a sibling CR
+    # finishing its own operator-driven reconcile" shape as
+    # gitops/data/kafka/user.yaml's KafkaUser at wave "3", one wave after
+    # its Kafka cluster (wave "2").
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/
+    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  name: airflow
+  owner: airflow
+  cluster:
+    name: postgres

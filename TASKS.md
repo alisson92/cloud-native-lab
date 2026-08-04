@@ -94,6 +94,26 @@
   clean. Follow-up noted for reviewer: app tier has no `/metrics`/
   ServiceMonitor yet — out of scope here. Merged PR #36. Airflow half
   (PR #38) still open.
+- [review] (platform-engineer) Airflow via GitOps (`gitops/apps/airflow.yaml`,
+  chart 1.22.0/Airflow 3.2.2, LocalExecutor) + nightly `sales_report` DAG
+  (Postgres aggregate + Kafka event-count, ConfigMap-delivered). New
+  CloudNativePG `Database`/role (reused cluster) and Kafka `KafkaUser`
+  "airflow" (replaces gate-verifier). Tag is a manual placeholder pending
+  first CI push (open risk — see PR). ADR-017..020. 1 fix round:
+  log-groomer sidecar resources + smoke-test runbook refs. `helm template`/
+  `gitleaks` clean. PR #38, branch `phase-7/airflow`.
+- [done] (security-engineer) Fixed PR #38's `airflow-ci` Trivy CRITICAL/
+  HIGH failures: `apps/airflow/Dockerfile` base switched
+  `apache/airflow:3.2.2` -> `slim-3.2.2` (default-image's Google/Amazon
+  provider extras pulled `litellm`/`ray`, unused by this DAG), providers
+  postgres/fab added back explicitly (fab required by chart's own
+  `auth_manager` default), `curl`/`libssl3`/`cryptography`/
+  `python-multipart`/`starlette` bumped to fixed versions. Bundled-but-
+  unexercised `uv`/`uvx`/`prek`/`usr/bin/docker` findings scoped via
+  `skip-files` (same class as service-ci.yml's npm precedent; the
+  `docker` CLI finding only surfaced in CI's Trivy v0.70.0, missed by
+  this session's older local v0.52.2). `airflow-ci` run 30909906300 on
+  `phase-7/airflow` (commit `20bcad4`) passed clean. ADR-021.
 - [done] (technical-writer) Root `README.md` + `docs/order-flow.md` added,
   grounded in Phase 1-6 shipped state only (no Phase 7 components). Every
   diagram element checked against `gitops/`/`apps/src/` in this session;

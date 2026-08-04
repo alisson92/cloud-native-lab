@@ -149,8 +149,18 @@ vault_exec kv put secret/postgres \
   password="${POSTGRES_PASSWORD}"
 
 echo "==> postgres: writing postgres-read policy..."
+# Extended in Phase 7 with "secret/data/airflow": the "airflow" Postgres
+# managed role (gitops/data/postgres/cluster.yaml's spec.managed.roles)
+# needs its password Secret created IN the postgres namespace (CloudNativePG
+# requires passwordSecret to be colocated with the Cluster CR), so this
+# namespace's own SecretStore role ("postgres") is the one that must read
+# that Vault path — see
+# gitops/data/postgres/airflow-role-externalsecret.yaml.
 vault_exec policy write postgres-read - <<'EOF'
 path "secret/data/postgres" {
+  capabilities = ["read"]
+}
+path "secret/data/airflow" {
   capabilities = ["read"]
 }
 EOF
@@ -224,8 +234,17 @@ vault_exec kv put secret/kafka \
   password="${KAFKA_PASSWORD}"
 
 echo "==> kafka: writing kafka-read policy..."
+# Extended in Phase 7 with "secret/data/airflow-kafka": the "airflow"
+# KafkaUser's password Secret must live in the kafka namespace (Strimzi
+# requires this, same colocation rule as backend's own credentials), so
+# this namespace's SecretStore role ("kafka") is the one that must read
+# that path too — see
+# gitops/data/kafka/airflow-user-externalsecret.yaml.
 vault_exec policy write kafka-read - <<'EOF'
 path "secret/data/kafka" {
+  capabilities = ["read"]
+}
+path "secret/data/airflow-kafka" {
   capabilities = ["read"]
 }
 EOF
@@ -292,6 +311,52 @@ vault_exec write auth/kubernetes/role/worker \
   bound_service_account_namespaces=apps \
   audience=vault \
   policies=worker-read \
+  ttl=1h
+
+# ---------------------------------------------------------------------------
+# airflow (Phase 7): gitops/data/airflow/README.md
+# Two credentials: the metadata-database role ("secret/airflow", also read
+# by postgres/'s own SecretStore for the managed-role passwordSecret, see
+# the "postgres" block above) and the Kafka user ("secret/airflow-kafka",
+# also read by kafka/'s own SecretStore, see the "kafka" block above).
+# username="airflow" MUST match both cluster.yaml's spec.managed.roles[].name
+# and airflow-user.yaml's KafkaUser metadata.name.
+# ---------------------------------------------------------------------------
+echo "==> airflow: writing metadata-db KV credentials (cached password, stable across reruns)..."
+AIRFLOW_DB_PASSWORD="$(get_or_generate_password airflow)"
+vault_exec kv put secret/airflow \
+  username=airflow \
+  password="${AIRFLOW_DB_PASSWORD}"
+
+echo "==> airflow: writing Kafka KV credentials (cached password, stable across reruns)..."
+AIRFLOW_KAFKA_PASSWORD="$(get_or_generate_password airflow-kafka)"
+vault_exec kv put secret/airflow-kafka \
+  username=airflow \
+  password="${AIRFLOW_KAFKA_PASSWORD}"
+
+echo "==> airflow: writing airflow-read policy..."
+# Also reads secret/data/postgres: the sales-report DAG reuses the
+# existing "orders" application credential to query orders/products
+# (docs/adr/020-airflow-kafka-postgres-source-split.md) rather than a new
+# read-only Postgres role.
+vault_exec policy write airflow-read - <<'EOF'
+path "secret/data/airflow" {
+  capabilities = ["read"]
+}
+path "secret/data/airflow-kafka" {
+  capabilities = ["read"]
+}
+path "secret/data/postgres" {
+  capabilities = ["read"]
+}
+EOF
+
+echo "==> airflow: writing airflow role..."
+vault_exec write auth/kubernetes/role/airflow \
+  bound_service_account_names=vault-auth \
+  bound_service_account_namespaces=airflow \
+  audience=vault \
+  policies=airflow-read \
   ttl=1h
 
 echo "==> Done. Verify with each directory's 'Verifying the exit gate' section."

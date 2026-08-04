@@ -1,0 +1,119 @@
+# CI for the custom Airflow image (apps/airflow/Dockerfile, Phase 7).
+#
+# Deliberately NOT reusing service-ci.yml (.github/workflows/service-ci.yml):
+# that reusable workflow's `test` job runs `npm ci && npm test`, which does
+# not apply here (this image has no application source, only a Dockerfile
+# adding one pip package to the official Airflow image) — reusing it would
+# mean either fabricating a no-op Node test step or bending the reusable
+# workflow's inputs to skip a job, both against docs/conventions.md's
+# simplicity principle. A short, dedicated workflow is the simplest fit.
+#
+# Also deliberately NOT including a `bump-gitops` job (contrast with
+# service-ci.yml's automation, ADR-013): gitops/apps/airflow.yaml pins the
+# image via a Helm `valuesObject` field (`images.airflow.repository`/`tag`),
+# not a `gitops/services/<service>/deployment.yaml` `image:` line — the sed
+# pattern service-ci.yml's bump-gitops job relies on does not apply to a
+# nested Helm values structure. Left as a manual bump for this batch (see
+# TASKS.md / PR description for the open follow-up); automating it the same
+# way as ADR-013 is a reasonable future addition, not required for the
+# Phase 7 exit gate.
+#
+# Actions/versions match service-ci.yml's own pins, verified against the
+# same GitHub release pages in this session:
+#   - docker/setup-buildx-action@v4.2.0
+#   - docker/build-push-action@v7.3.0
+#   - actions/upload-artifact@v7.0.1 / actions/download-artifact@v8.0.1
+#   - aquasecurity/trivy-action@v0.36.0
+#   - docker/login-action@v4.6.0
+name: airflow-ci
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/airflow/**"]
+  pull_request:
+    paths: ["apps/airflow/**"]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/airflow:${{ github.sha }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4.2.0
+      - uses: docker/build-push-action@v7.3.0
+        with:
+          context: apps/airflow
+          tags: ${{ env.IMAGE }}
+          load: true
+          push: false
+      - run: docker save "${{ env.IMAGE }}" -o /tmp/airflow.tar
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: airflow-image
+          path: /tmp/airflow.tar
+          retention-days: 1
+
+  scan:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: airflow-image
+          path: /tmp
+      - run: docker load -i /tmp/airflow.tar
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+          # apps/airflow/Dockerfile (see its header comment and
+          # docs/adr/021-airflow-slim-base-image.md) closes every CVE this
+          # gate found except a handful of bundled binaries the official
+          # apache/airflow image ships but never executes at runtime:
+          #   - GHSA-4w2j-m93h-cj5j (quinn-proto), in the `uv`/`uvx`
+          #     Python-packaging binaries at these 4 paths.
+          #   - 3 Go stdlib CVEs (crypto/x509, os, mime — DoS/symlink
+          #     issues) in usr/bin/docker, the Docker CLI binary the base
+          #     image bundles (present on both the default and `slim`
+          #     tags, confirmed in this session; unrelated to this
+          #     project's `apache-airflow-providers-docker`, which is not
+          #     installed here and talks to the Docker socket via its own
+          #     Python SDK, not this CLI).
+          # Confirmed in this session (`cat /entrypoint`) that none of
+          # `uv`/`uvx`/`prek`/`docker` are ever invoked by the image's own
+          # startup script — they sit on PATH as build/dev conveniences
+          # only, never called by the running
+          # webserver/scheduler/dag-processor/api-server — so this is the
+          # same class of upstream-base-image-bundled-but-unexercised
+          # tooling as service-ci.yml's node:22-alpine/npm precedent
+          # (docs/phase-logs/phase-5.md), not part of this image's actual
+          # attack surface.
+          skip-files: /home/airflow/.local/bin/uv,/home/airflow/.local/bin/uvx,/home/airflow/.local/share/uv/tools/prek/bin/uv,/home/airflow/.local/share/uv/tools/prek/bin/uvx,/usr/bin/docker
+
+  push:
+    needs: [build, scan]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: airflow-image
+          path: /tmp
+      - run: docker load -i /tmp/airflow.tar
+      - uses: docker/login-action@v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: docker push "${{ env.IMAGE }}"
