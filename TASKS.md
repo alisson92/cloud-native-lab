@@ -119,17 +119,18 @@
   `docker` CLI finding only surfaced in CI's Trivy v0.70.0, missed by
   this session's older local v0.52.2). `airflow-ci` run 30909906300 on
   `phase-7/airflow` (commit `20bcad4`) passed clean. ADR-021.
-- [review] (platform-engineer) Live-only bug on `gitops/apps/airflow.yaml`:
-  `jobAnnotations` sync-waves on `migrateDatabaseJob`/`createUserJob` only
-  annotate the Job, not its chart-created ServiceAccount, which defaulted
-  to wave "0" — same/later than its Job, so Argo CD's strict wave-before-
-  kind ordering deadlocked the Job forever (confirmed live:
-  `FailedCreate`, SA not found; same class as Phase 6 backend/KafkaUser
-  fix). Fixed via chart-native `migrateDatabaseJob.serviceAccount.annotations`/
-  `createUserJob.serviceAccount.annotations` (chart 1.22.0 values.yaml,
-  verified) matched to each Job's wave; `helm template` confirms both SAs
-  now render the annotation. PR opened, not merged (human gate). Branch
-  `phase-7/airflow-job-serviceaccount-wave-fix`.
+- [done] (platform-engineer) Live-only bug on `gitops/apps/airflow.yaml`:
+  `jobAnnotations` sync-waves on `migrateDatabaseJob`/`createUserJob` didn't
+  annotate the chart-created ServiceAccounts (defaulted to wave "0"),
+  deadlocking the Job forever. Fixed via chart-native
+  `serviceAccount.annotations` matched to each Job's wave. PR #40 merged.
+- [review] (platform-engineer) Second live-only bug, same class: chart's
+  own `airflow-config` ConfigMap (default wave "0") mounted by both Jobs,
+  later than migrateDatabaseJob's wave "-2" — confirmed live (`FailedMount`,
+  ConfigMap not found). Fixed via `airflowConfigAnnotations: "-2"`.
+  Holistic re-check of every volume/secretKeyRef/ServiceAccount on both
+  Jobs found no further gaps. `helm template` clean. PR #43, not merged.
+  Branch `phase-7/airflow-config-configmap-wave-fix`.
 - [done] (technical-writer) Root `README.md` + `docs/order-flow.md` added,
   grounded in Phase 1-6 shipped state only (no Phase 7 components). Every
   diagram element checked against `gitops/`/`apps/src/` in this session;
