@@ -97,12 +97,21 @@
   chart 1.22.0/Airflow 3.2.2, LocalExecutor) + nightly `sales_report` DAG
   (Postgres aggregate + Kafka event-count, ConfigMap-delivered). New
   CloudNativePG `Database`/role (reused cluster) and Kafka `KafkaUser`
-  "airflow" (replaces gate-verifier). Custom image adds the Kafka
-  provider; tag is a manual placeholder pending first CI push (open risk
-  — see PR). ADR-017..020. 1 fix round: log-groomer sidecar resources
-  (scheduler+dagProcessor) + smoke-test runbook's gate-verifier refs, both
-  confirmed via `helm template`. `helm template`/`gitleaks` clean. PR #38,
-  branch `phase-7/airflow`.
+  "airflow" (replaces gate-verifier). Tag is a manual placeholder pending
+  first CI push (open risk — see PR). ADR-017..020. 1 fix round:
+  log-groomer sidecar resources + smoke-test runbook refs. `helm template`/
+  `gitleaks` clean. PR #38, branch `phase-7/airflow`.
+- [review] (security-engineer) Fixed PR #38's `airflow-ci` Trivy CRITICAL/
+  HIGH failures: `apps/airflow/Dockerfile` base switched
+  `apache/airflow:3.2.2` -> `slim-3.2.2` (default-image's Google/Amazon
+  provider extras pulled `litellm`/`ray`, unused by this DAG), providers
+  postgres/fab added back explicitly (fab required by chart's own
+  `auth_manager` default), `curl`/`libssl3`/`cryptography`/
+  `python-multipart`/`starlette` bumped to fixed versions. Remaining
+  `uv`/`uvx`/`prek` quinn-proto finding scoped via `skip-files`
+  (unreachable at runtime, same class as service-ci.yml's npm precedent).
+  Verified locally: `docker build` + `trivy image --exit-code 1` clean
+  (Total: 0). ADR-021.
 - [done] (technical-writer) Root `README.md` + `docs/order-flow.md` added,
   grounded in Phase 1-6 shipped state only (no Phase 7 components). Every
   diagram element checked against `gitops/`/`apps/src/` in this session;

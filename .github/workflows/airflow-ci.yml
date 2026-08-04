@@ -77,6 +77,20 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: "1"
           ignore-unfixed: true
+          # apps/airflow/Dockerfile (see its header comment and
+          # docs/adr/021-airflow-slim-base-image.md) closes every CVE this
+          # gate found except one: GHSA-4w2j-m93h-cj5j (quinn-proto, a
+          # transitive Rust dependency of the `uv`/`uvx` Python-packaging
+          # binaries the official apache/airflow image bundles at these 4
+          # paths). Confirmed in this session that the image's own
+          # /entrypoint never calls `uv`/`uvx`/`prek` — they sit on PATH as
+          # build/dev conveniences only, never invoked by the running
+          # webserver/scheduler/dag-processor/api-server — so this is the
+          # same class of upstream-base-image-bundled-but-unexercised
+          # tooling as service-ci.yml's node:22-alpine/npm precedent
+          # (docs/phase-logs/phase-5.md), not part of this image's actual
+          # attack surface.
+          skip-files: /home/airflow/.local/bin/uv,/home/airflow/.local/bin/uvx,/home/airflow/.local/share/uv/tools/prek/bin/uv,/home/airflow/.local/share/uv/tools/prek/bin/uvx
 
   push:
     needs: [build, scan]
