@@ -93,6 +93,13 @@
   same trade-off as ADR-007/011). ADR-016. `helm template` validated
   clean. Follow-up noted for reviewer: app tier has no `/metrics`/
   ServiceMonitor yet — out of scope here. Merged PR #36.
+- [review] (platform-engineer) Live-only fix: Grafana `sc-dashboard`/
+  `sc-datasources` sidecars OOMKilled (172+ restarts, `exitCode: 137`) on
+  the operator's Kind cluster — PR #36's 64Mi limit was too low. Bumped
+  `grafana.sidecar.resources` to 128Mi/256Mi, grounded in the grafana
+  chart's own commented example and kiwigrid/k8s-sidecar issue #462
+  (~189Mi steady-state on the 2.x line, matching the pinned 2.10.0 tag).
+  `helm template` validated clean. Branch `phase-7/grafana-sidecar-oom-fix`.
 - [done] (platform-engineer) Airflow via GitOps (`gitops/apps/airflow.yaml`,
   chart 1.22.0/Airflow 3.2.2, LocalExecutor) + nightly `sales_report` DAG
   (Postgres aggregate + Kafka event-count, ConfigMap-delivered). New
