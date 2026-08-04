@@ -8,15 +8,22 @@
 # workflow's inputs to skip a job, both against docs/conventions.md's
 # simplicity principle. A short, dedicated workflow is the simplest fit.
 #
-# Also deliberately NOT including a `bump-gitops` job (contrast with
-# service-ci.yml's automation, ADR-013): gitops/apps/airflow.yaml pins the
-# image via a Helm `valuesObject` field (`images.airflow.repository`/`tag`),
-# not a `gitops/services/<service>/deployment.yaml` `image:` line — the sed
-# pattern service-ci.yml's bump-gitops job relies on does not apply to a
-# nested Helm values structure. Left as a manual bump for this batch (see
-# TASKS.md / PR description for the open follow-up); automating it the same
-# way as ADR-013 is a reasonable future addition, not required for the
-# Phase 7 exit gate.
+# Also includes a `bump-gitops` job (contrast with the original version of
+# this file, which left this manual — see git history / TASKS.md): unlike
+# service-ci.yml's `image:` line in a plain Deployment manifest,
+# gitops/apps/airflow.yaml pins the tag inside a nested Helm `valuesObject`
+# field (`images.airflow.tag`), so service-ci.yml's bump-gitops `sed`
+# pattern (keyed on an `image: ghcr.io/...` line) does not match here.
+# Instead this job's sed is keyed on the `tag: "..."` line, which is unique
+# in this file (verified in this session: `grep -n 'tag:'
+# gitops/apps/airflow.yaml` returns exactly one match) — a minimal,
+# single-line diff. A YAML-aware rewrite with `yq` (pre-installed on
+# GitHub-hosted runners) was tried and rejected: mikefarah/yq's `-i`
+# re-serializes the whole document and drops every blank line in the file
+# (verified in this session — a 285-line file with ~13 blank lines came back
+# blank-line-free), producing a noisy, hard-to-review diff across the entire
+# values block on every bump PR instead of the one line that actually
+# changed.
 #
 # Actions/versions match service-ci.yml's own pins, verified against the
 # same GitHub release pages in this session:
@@ -25,6 +32,9 @@
 #   - actions/upload-artifact@v7.0.1 / actions/download-artifact@v8.0.1
 #   - aquasecurity/trivy-action@v0.36.0
 #   - docker/login-action@v4.6.0
+#   - gh CLI (pre-installed on GitHub-hosted runners): `gh pr list --head`,
+#     `gh pr create --head/--base/--title/--body`, `gh pr edit` — flags
+#     confirmed against cli.github.com/manual/gh_pr_create and gh_pr_list.
 name: airflow-ci
 
 on:
@@ -117,3 +127,85 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - run: docker push "${{ env.IMAGE }}"
+
+  # Opens/updates a PR bumping gitops/apps/airflow.yaml's
+  # images.airflow.tag to the sha `push` just published. Never merges
+  # (human gate, see CLAUDE.md and ADR-013) — only creates or updates the
+  # PR. Adapted from service-ci.yml's `bump-gitops` job (ADR-013); this
+  # workflow is not a reusable `workflow_call` like service-ci.yml, so
+  # "airflow" is hardcoded throughout instead of taking it as an input.
+  #
+  # `if:` mirrors `push`'s own condition rather than relying solely on
+  # `needs: push`: a job whose own dependency was *skipped* (not failed)
+  # still runs by default in GitHub Actions, so without this explicit guard
+  # a pull_request-triggered run (where `push` skips) would still attempt to
+  # run this job. Belt-and-braces with `push`'s guard, not a substitute for
+  # it.
+  bump-gitops:
+    needs: push
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      # Overrides the workflow-level `packages: write` for this job only:
+      # this job needs repo contents write (to push the bump branch) and
+      # pull-requests write (to open/edit the PR), not registry access.
+      # Docs: https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/controlling-permissions-for-github_token
+      contents: write
+      pull-requests: write
+    env:
+      NEW_SHA: ${{ github.sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: bump
+        name: Bump image tag in gitops manifest
+        run: |
+          set -euo pipefail
+          FILE="gitops/apps/airflow.yaml"
+          BRANCH="ci/bump-airflow-image"
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+
+          # gitops/apps/airflow.yaml pins the tag inside a nested Helm
+          # valuesObject field (images.airflow.tag), not a plain `image:`
+          # line like the per-service deployment.yaml files service-ci.yml
+          # bumps — this sed is keyed on the `tag: "..."` line instead,
+          # which is the only "tag:" line in this file (see this workflow's
+          # header comment for why a YAML-aware `yq` rewrite was rejected).
+          # Matches both the initial "REPLACE_WITH_PUSHED_SHA" placeholder
+          # and any subsequent real sha identically — plain substring
+          # replacement, no special-casing needed.
+          sed -i -E "s#(tag: \").*(\")#\1${NEW_SHA}\2#" "$FILE"
+
+          if git diff --quiet -- "$FILE"; then
+            echo "Image tag already at ${NEW_SHA}; nothing to bump."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add "$FILE"
+          git commit -m "chore(gitops): bump airflow image to ${NEW_SHA}"
+          # Stable, predictable branch name, force-pushed each run so
+          # repeated CI runs update the same branch/PR instead of piling up
+          # duplicates (same convention as service-ci.yml's bump-gitops).
+          git push --force origin "HEAD:${BRANCH}"
+      - name: Open or update pull request
+        if: steps.bump.outputs.changed == 'true'
+        env:
+          BRANCH: ${{ steps.bump.outputs.branch }}
+        run: |
+          set -euo pipefail
+          TITLE="chore(gitops): bump airflow image to ${NEW_SHA}"
+          BODY=$(printf 'Automated image tag bump for `airflow` to the image `ghcr.io/%s/airflow:%s` just built and pushed by this CI run.\n\nOpened automatically by the bump-gitops job in airflow-ci.yml (see ADR-013). This does not bypass the human merge gate: review the diff and merge manually to let Argo CD reconcile the new image.\n' "${{ github.repository_owner }}" "$NEW_SHA")
+
+          # gh pr list --head/gh pr create/gh pr edit flags confirmed against
+          # https://cli.github.com/manual/gh_pr_list and gh_pr_create.
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING_PR" ]; then
+            gh pr edit "$EXISTING_PR" --title "$TITLE" --body "$BODY"
+          else
+            gh pr create --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
+          fi

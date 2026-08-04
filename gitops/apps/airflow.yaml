@@ -10,9 +10,10 @@
 # `images.airflow` override) requires apache-airflow-providers-apache-kafka,
 # which the stock `apache/airflow` image does not ship — see
 # apps/airflow/Dockerfile and .github/workflows/airflow-ci.yml. The tag
-# below is bumped manually for now (see PR description; no bump-gitops
-# automation yet for this image, contrast with ADR-013's per-service
-# workflows).
+# below is bumped automatically by that workflow's `bump-gitops` job
+# (ADR-013, extended to this nested Helm-values field — see the job's own
+# comments for the sed pattern used) on every push to `main` that touches
+# `apps/airflow/**`; it opens a PR, a human still merges it.
 #
 # Docs consulted:
 # - https://airflow.apache.org/docs/helm-chart/1.22.0/parameters-ref.html
@@ -66,7 +67,9 @@ spec:
         images:
           airflow:
             repository: ghcr.io/alisson92/airflow
-            # Manual bump for this batch — see this file's header comment.
+            # Bumped automatically by airflow-ci.yml's bump-gitops job — see
+            # this file's header comment. Placeholder until the first
+            # post-automation push to main lands (open PR bumps it).
             tag: "REPLACE_WITH_PUSHED_SHA"
 
         # Disabled: none of these are needed by LocalExecutor and each is a
