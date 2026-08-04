@@ -86,6 +86,11 @@
 
 - [todo] To be broken down by the orchestrator. Definitions live in
   `docs/phases.md`.
+- [done] (technical-writer) Root `README.md` + `docs/order-flow.md` added,
+  grounded in Phase 1-6 shipped state only (no Phase 7 components). Every
+  diagram element checked against `gitops/`/`apps/src/` in this session;
+  ADR-007/009/011/012/015 outcomes reflected. Branch:
+  `docs/readme-and-diagrams`.
 
 ## Log
 
