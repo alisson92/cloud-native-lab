@@ -131,12 +131,12 @@ flowchart TB
     ESO -.->|ExternalSecret -> Secret| Redis
     ESO -.->|ExternalSecret -> Secret| RabbitMQ
     ESO -.->|ExternalSecret -> Secret| Kafka
-    ESO -.->|ExternalSecret -> Secret\n(metadata DB, Postgres conn, Kafka conn)| AirflowSched
+    ESO -.->|"ExternalSecret -> Secret (metadata DB, Postgres conn, Kafka conn)"| AirflowSched
 
-    CNPGOp -.->|reconciles\norders + airflow databases,\nsame Cluster| Postgres
+    CNPGOp -.->|reconciles orders + airflow databases, same Cluster| Postgres
     Strimzi -.->|reconciles| Kafka
 
-    ArgoCD -.->|reconciles all of the above\nfrom gitops/| apps_ns
+    ArgoCD -.->|reconciles all of the above from gitops/| apps_ns
     ArgoCD -.-> postgres_ns
     ArgoCD -.-> redis_ns
     ArgoCD -.-> rabbitmq_ns

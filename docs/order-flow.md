@@ -60,10 +60,10 @@ sequenceDiagram
 
         par RabbitMQ publish (best-effort, non-blocking)
             Backend->>RabbitMQ: sendToQueue("orders.created", order, persistent:true)
-            Note right of Backend: publish failure is caught and logged;<br/>never fails the HTTP response
+            Note right of Backend: publish failure is caught and logged —<br/>never fails the HTTP response
         and Kafka publish (best-effort, non-blocking)
             Backend->>Kafka: producer.send(topic:"order-events",<br/>key:order.id, value:{type:"order.created", order})
-            Note right of Backend: publish failure is caught and logged;<br/>never fails the HTTP response
+            Note right of Backend: publish failure is caught and logged —<br/>never fails the HTTP response
         end
 
         Backend-->>BFF: 201 {id, productId, quantity, totalCents}
