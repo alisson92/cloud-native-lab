@@ -82,60 +82,19 @@
   `docs/phase-logs/phase-6.md`. Key decisions: ADR-011, ADR-012, ADR-013,
   ADR-014, ADR-015.
 
-## Phase 7 — Operations
+## Phase 7 — Operations (owner: platform-engineer) — DONE
 
-- [done] (platform-engineer) kube-prometheus-stack via GitOps
-  (`gitops/apps/kube-prometheus-stack.yaml`), local Kind only (ADR-004).
-  Chart 88.1.3: Prometheus+Grafana+kube-state-metrics+node-exporter kept
-  (default dashboards satisfy "dashboards live"), Alertmanager disabled
-  (no configured receiver — speculative), retention trimmed to 24h,
-  single replicas, explicit resources/limits everywhere, no PVC (emptyDir,
-  same trade-off as ADR-007/011). ADR-016. `helm template` validated
-  clean. Follow-up noted for reviewer: app tier has no `/metrics`/
-  ServiceMonitor yet — out of scope here. Merged PR #36.
-- [review] (platform-engineer) Live-only fix: Grafana `sc-dashboard`/
-  `sc-datasources` sidecars OOMKilled (172+ restarts, `exitCode: 137`) on
-  the operator's Kind cluster — PR #36's 64Mi limit was too low. Bumped
-  `grafana.sidecar.resources` to 128Mi/256Mi, grounded in the grafana
-  chart's own commented example and kiwigrid/k8s-sidecar issue #462
-  (~189Mi steady-state on the 2.x line, matching the pinned 2.10.0 tag).
-  `helm template` validated clean. Branch `phase-7/grafana-sidecar-oom-fix`.
-- [done] (platform-engineer) Airflow via GitOps (`gitops/apps/airflow.yaml`,
-  chart 1.22.0/Airflow 3.2.2, LocalExecutor) + nightly `sales_report` DAG
-  (Postgres aggregate + Kafka event-count, ConfigMap-delivered). New
-  CloudNativePG `Database`/role (reused cluster) and Kafka `KafkaUser`
-  "airflow" (replaces gate-verifier). ADR-017..020. Merged PR #38. Image
-  tag bump is now automated (ADR-013 pattern extended to this file's
-  nested Helm `images.airflow.tag`) — PR #39, human still merges.
-- [done] (security-engineer) Fixed PR #38's `airflow-ci` Trivy CRITICAL/
-  HIGH failures: `apps/airflow/Dockerfile` base switched
-  `apache/airflow:3.2.2` -> `slim-3.2.2` (default-image's Google/Amazon
-  provider extras pulled `litellm`/`ray`, unused by this DAG), providers
-  postgres/fab added back explicitly (fab required by chart's own
-  `auth_manager` default), `curl`/`libssl3`/`cryptography`/
-  `python-multipart`/`starlette` bumped to fixed versions. Bundled-but-
-  unexercised `uv`/`uvx`/`prek`/`usr/bin/docker` findings scoped via
-  `skip-files` (same class as service-ci.yml's npm precedent; the
-  `docker` CLI finding only surfaced in CI's Trivy v0.70.0, missed by
-  this session's older local v0.52.2). `airflow-ci` run 30909906300 on
-  `phase-7/airflow` (commit `20bcad4`) passed clean. ADR-021.
-- [done] (platform-engineer) Live-only bug on `gitops/apps/airflow.yaml`:
-  `jobAnnotations` sync-waves on `migrateDatabaseJob`/`createUserJob` didn't
-  annotate the chart-created ServiceAccounts (defaulted to wave "0"),
-  deadlocking the Job forever. Fixed via chart-native
-  `serviceAccount.annotations` matched to each Job's wave. PR #40 merged.
-- [review] (platform-engineer) Second live-only bug, same class: chart's
-  own `airflow-config` ConfigMap (default wave "0") mounted by both Jobs,
-  later than migrateDatabaseJob's wave "-2" — confirmed live (`FailedMount`,
-  ConfigMap not found). Fixed via `airflowConfigAnnotations: "-2"`.
-  Holistic re-check of every volume/secretKeyRef/ServiceAccount on both
-  Jobs found no further gaps. `helm template` clean. PR #43, not merged.
-  Branch `phase-7/airflow-config-configmap-wave-fix`.
-- [done] (technical-writer) Root `README.md` + `docs/order-flow.md` added,
-  grounded in Phase 1-6 shipped state only (no Phase 7 components). Every
-  diagram element checked against `gitops/`/`apps/src/` in this session;
-  ADR-007/009/011/012/015 outcomes reflected. Branch:
-  `docs/readme-and-diagrams`.
+- Summary: kube-prometheus-stack (PR #36, ADR-016) + Airflow with a
+  nightly `sales_report` DAG (PR #38, ADR-017..021) via GitOps. Reviewer
+  CHANGES REQUESTED once (resource limits + stale runbook ref), fixed
+  and re-reviewed clean. 10 live-only bugs found and fixed post-merge
+  (PRs #40, #41, #43-#49; see `docs/phase-logs/phase-7.md`), incl. 3
+  chained sync-wave deadlocks, 3 OOMKilled resource limits, an Airflow 3
+  context-injection API change, and a Vault dev-mode state loss (same
+  class as Phases 3/5/6). Human + orchestrator verified the exit gate
+  live on Kind: `sales_report` produced real report rows from both its
+  cron schedule and a manual trigger; Grafana serving 28 populated
+  dashboards. Full log: `docs/phase-logs/phase-7.md`.
 
 ## Log
 
@@ -170,3 +129,9 @@
   reviewer APPROVE WITH FOLLOW-UPS, all 4 closed (PRs #31, #32). Exit gate
   confirmed live on Kind: order event consumed from both RabbitMQ (worker
   log) and Kafka (`gate-verifier` consumer on `order-events`).
+- (orchestrator) Phase 7 log archived to `docs/phase-logs/phase-7.md`; 10
+  live-only bugs found and fixed post-merge (PRs #40, #41, #43-#49,
+  chained sync-wave deadlocks + OOMKilled limits + an Airflow 3 API
+  change). Exit gate confirmed live on Kind: `sales_report` produced real
+  report rows (cron + manual trigger), Grafana serving 28 populated
+  dashboards.
