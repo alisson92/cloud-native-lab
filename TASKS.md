@@ -136,6 +136,14 @@
   diagram element checked against `gitops/`/`apps/src/` in this session;
   ADR-007/009/011/012/015 outcomes reflected. Branch:
   `docs/readme-and-diagrams`.
+- [review] (technical-writer) New runbook
+  `docs/runbooks/airflow-observability-verification.md`: DAG trigger/poll/
+  verify + Grafana dashboard/datasource checks, grounded in Phase 7's real
+  live-verification bugs (Argo CD stale-manifest retries, `subPath`
+  ConfigMap non-hot-reload, immutable Jobs, no `airflow tasks logs`
+  subcommand, Grafana creds, OOMKilled sizing). No Bash access this
+  session — commit/branch/push/PR still needed (see task path
+  `docs/runbooks/airflow-observability-verification.md`).
 
 ## Log
 
