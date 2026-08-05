@@ -2,10 +2,11 @@
 
 A cloud-native lab that reproduces the day-to-day reality of a platform/SRE
 engineer: infrastructure as code, GitOps delivery, secret management,
-Kubernetes-operated data services, and asynchronous messaging — under real
-cost constraints. It is also an experiment in AI agent orchestration:
-specialized agents build the project, coordinated by an orchestrator
-session, with a human observing and approving at defined gates.
+Kubernetes-operated data services, asynchronous messaging, batch
+orchestration, and observability — under real cost constraints. It is also
+an experiment in AI agent orchestration: specialized agents build the
+project, coordinated by an orchestrator session, with a human observing and
+approving at defined gates.
 
 Full context lives in [`docs/`](docs/); this file is an entry point, not a
 replacement for it. See [`docs/vision.md`](docs/vision.md) for the complete
@@ -24,28 +25,31 @@ scenario needs it:
 | PostgreSQL | Transactional store for orders (via the CloudNativePG operator) |
 | Redis      | Catalog cache (cache-aside)                                   |
 | RabbitMQ   | Task queue: order created → worker sends email/invoice (stub) |
-| Kafka      | Immutable event log: order lifecycle events for future consumers |
+| Kafka      | Immutable event log: order lifecycle events, consumed by Airflow |
+| Airflow    | Nightly batch ETL: aggregates orders/events into sales reports |
 | Vault      | Secret management for every credentialed service above        |
+| Prometheus / Grafana | Cluster metrics + dashboards (observability)          |
 
 `docs/vision.md`'s non-goals apply throughout: no high availability, no
 production hardening beyond sensible defaults, minimal application code —
 the platform is the product, not the storefront.
 
-## Status: through Phase 6
+## Status: through Phase 7
 
-This README describes the system **as it stands through Phase 6** (see
-`TASKS.md` and `docs/phase-logs/`): Foundation, Delivery, Secrets, Data,
-Applications, and Messaging are done and merged. Phase 7 (Airflow ETL +
-kube-prometheus-stack observability) is in progress and intentionally not
-reflected here yet — this file will be updated once that work merges.
+This README describes the system **as it stands through Phase 7** (see
+`TASKS.md`): Foundation, Delivery, Secrets, Data, Applications, Messaging,
+and Operations (Airflow ETL + kube-prometheus-stack observability) are done
+and merged, and the Phase 7 exit gate (nightly DAG produces a report,
+dashboards live) was verified on a Kind cluster.
 
 ## Architecture
 
 Everything below `gitops/` is reconciled by Argo CD from a single
-app-of-apps root (`gitops/root-app.yaml`). Infra components
-(Vault, External Secrets Operator, the CloudNativePG operator, the Strimzi
-operator) live under `gitops/apps/`; data workloads and application
-services live under `gitops/data/` and `gitops/services/`.
+app-of-apps root (`gitops/root-app.yaml`). Infra components and full-stack
+Helm-chart Applications (Vault, External Secrets Operator, the CloudNativePG
+operator, the Strimzi operator, Airflow, kube-prometheus-stack) live under
+`gitops/apps/`; data workloads and application services live under
+`gitops/data/` and `gitops/services/`.
 
 ```mermaid
 flowchart TB
@@ -93,6 +97,17 @@ flowchart TB
         CNPGOp["CloudNativePG Operator"]
     end
 
+    subgraph airflow_ns["namespace: airflow"]
+        AirflowSched["Airflow scheduler\n(LocalExecutor, chart 1.22.0)\nDAG: sales_report (nightly, 02:00 UTC)"]
+    end
+
+    subgraph monitoring_ns["namespace: monitoring"]
+        Prometheus["Prometheus\n(kube-prometheus-stack)"]
+        Grafana["Grafana\n(bundled default dashboards)"]
+        KSM["kube-state-metrics"]
+        NodeExporter["node-exporter"]
+    end
+
     Browser -->|HTTP| Frontend
     Frontend -->|HTTP /catalog /orders| BFF
     BFF -->|HTTP /catalog /orders| Backend
@@ -102,6 +117,13 @@ flowchart TB
     Backend -->|produce order-events\nSASL/SCRAM| Kafka
     RabbitMQ -->|consume orders.created| Worker
 
+    AirflowSched -->|SQL: read orders/products\nwrite sales_reports| Postgres
+    AirflowSched -->|consume order-events\nSASL/SCRAM, write kafka_event_counts| Kafka
+
+    Prometheus -->|scrape| KSM
+    Prometheus -->|scrape| NodeExporter
+    Grafana -->|query, bundled default dashboards| Prometheus
+
     Vault -.->|secrets via ESO| ESO
     ESO -.->|ExternalSecret -> Secret| Backend
     ESO -.->|ExternalSecret -> Secret| Worker
@@ -109,8 +131,9 @@ flowchart TB
     ESO -.->|ExternalSecret -> Secret| Redis
     ESO -.->|ExternalSecret -> Secret| RabbitMQ
     ESO -.->|ExternalSecret -> Secret| Kafka
+    ESO -.->|ExternalSecret -> Secret\n(metadata DB, Postgres conn, Kafka conn)| AirflowSched
 
-    CNPGOp -.->|reconciles| Postgres
+    CNPGOp -.->|reconciles\norders + airflow databases,\nsame Cluster| Postgres
     Strimzi -.->|reconciles| Kafka
 
     ArgoCD -.->|reconciles all of the above\nfrom gitops/| apps_ns
@@ -121,6 +144,8 @@ flowchart TB
     ArgoCD -.-> vault_ns
     ArgoCD -.-> eso_ns
     ArgoCD -.-> cnpg_ns
+    ArgoCD -.-> airflow_ns
+    ArgoCD -.-> monitoring_ns
 ```
 
 Notes grounded in the actual manifests (not the original plan):
@@ -139,15 +164,41 @@ Notes grounded in the actual manifests (not the original plan):
   authentication — no TLS, consistent with every other in-cluster service
   trusting the cluster network boundary.
 - The backend's `KafkaUser` is producer-only (`Describe`+`Write` on
-  `order-events`); nothing in this repo's shipped workloads consumes that
-  topic yet. A debug-only, Strimzi-generated-credential `KafkaUser`
-  (`gate-verifier`, ADR-015) exists solely for manual verification via
-  `kubectl` and is not a running workload — it is intentionally omitted
-  from the diagram above. Phase 7's Airflow consumer is the real,
-  workload-backed reader and is not part of this diagram yet.
+  `order-events`). Airflow's own `KafkaUser` (`airflow`, read-only
+  `Describe`+`Read` on `order-events` plus `Read` on its consumer group
+  `airflow-sales-report`) is the real, workload-backed reader — it replaced
+  the debug-only `gate-verifier` identity from Phase 6 (ADR-015's
+  Consequences, `gitops/data/kafka/airflow-user.yaml`).
+- Airflow runs with `LocalExecutor` (ADR-017): the scheduler pod also runs
+  every DAG task as a subprocess — there is no separate Celery worker
+  Deployment and no broker. Its single DAG (`sales_report`,
+  `gitops/data/airflow/dags-configmap.yaml`) is delivered as a `ConfigMap`
+  mounted into the DAGs folder (ADR-018), not `git-sync`. It has two
+  independent, unchained tasks (ADR-020): `aggregate_daily_sales` (reads
+  `orders`/`products` from Postgres, writes `sales_reports`) and
+  `consume_order_events` (reads the `order-events` Kafka topic, writes
+  `kafka_event_counts`).
+- Airflow's metadata database is **not** a dedicated Postgres instance — it
+  is a second `Database` (`airflow`, owned by its own managed role) inside
+  the same CloudNativePG `postgres` Cluster that already holds `orders`
+  (ADR-019, `gitops/data/postgres/airflow-database.yaml`). Both DAG tasks
+  also write their output tables into that same database — this lab has no
+  separate reporting warehouse.
+- kube-prometheus-stack ships Prometheus + Grafana + kube-state-metrics +
+  node-exporter; Alertmanager is deliberately disabled (no configured
+  receiver in this lab, ADR-016). Grafana serves the chart's own bundled
+  default dashboards — no custom dashboards are authored in this repo.
+  Neither Prometheus nor Grafana persists to a PVC (`emptyDir`, same
+  ephemeral-by-design trade-off as Redis/RabbitMQ, ADR-016). The
+  application tier (backend/BFF/frontend/worker) exposes no `/metrics`
+  endpoint yet, so Prometheus only scrapes cluster-level targets
+  (kube-state-metrics, node-exporter) — there is no `ServiceMonitor` for
+  the app tier in this repo.
 
 See [`docs/order-flow.md`](docs/order-flow.md) for how an order actually
-moves through the sync path and both async paths.
+moves through the sync path and both async paths — that flow is unchanged
+by Phase 7; Airflow reads from Postgres/Kafka independently, outside the
+request path.
 
 ## Repository layout
 
@@ -156,8 +207,9 @@ local/kind/     # Local Kind cluster config (not Terraform-managed)
 terraform/      # Foundation (GCP/GKE) + delivery (Argo CD bootstrap)
 gitops/         # Everything Argo CD reconciles
   root-app.yaml # App-of-apps root
-  apps/         # Infra Application manifests (vault, ESO, cnpg operator, strimzi)
-  data/         # Data workloads (postgres, redis, rabbitmq, kafka)
+  apps/         # Infra Application manifests (vault, ESO, cnpg operator,
+                # strimzi, airflow, kube-prometheus-stack)
+  data/         # Data workloads (postgres, redis, rabbitmq, kafka, airflow)
   services/     # Application workloads (backend, bff, frontend, worker)
 apps/           # Application source code, one directory per service
 docs/           # Vision, architecture, phases, conventions, ADRs, phase logs
@@ -228,7 +280,37 @@ any cloud spend, per
    # "order <id>: sending email + invoice (stub) ..."
    ```
 
-6. **Tear down**
+6. **Check the Airflow DAG and the Grafana dashboards**
+
+   ```sh
+   kubectl -n airflow get pod
+   # scheduler, api-server, dag-processor: Running.
+
+   # Trigger a run manually rather than waiting for the 02:00 UTC schedule:
+   kubectl -n airflow exec deploy/airflow-scheduler -- airflow dags trigger sales_report
+
+   # After it completes, check the two tables it writes (both in the
+   # "orders" database, shared with the application tier):
+   kubectl -n postgres exec -it postgres-1 -- psql -U orders -d orders \
+     -c 'SELECT * FROM sales_reports ORDER BY generated_at DESC LIMIT 10;'
+   kubectl -n postgres exec -it postgres-1 -- psql -U orders -d orders \
+     -c 'SELECT * FROM kafka_event_counts ORDER BY generated_at DESC LIMIT 10;'
+   ```
+
+   See [`gitops/data/airflow/README.md`](gitops/data/airflow/README.md) for
+   the full exit-gate verification, including `ExternalSecret`/`Database`/
+   `KafkaUser` readiness checks.
+
+   ```sh
+   kubectl -n monitoring get svc
+   # Find the Grafana Service name, then port-forward it, e.g.:
+   kubectl -n monitoring port-forward svc/<grafana-service-name> 3000:80
+   # http://localhost:3000/ — the chart's bundled default dashboards are
+   # pre-provisioned; default admin credentials are the chart's own
+   # (see the kube-prometheus-stack chart's Grafana subchart docs).
+   ```
+
+7. **Tear down**
 
    ```sh
    kind delete cluster --name cloud-native-lab

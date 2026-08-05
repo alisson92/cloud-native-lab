@@ -95,6 +95,9 @@
   live on Kind: `sales_report` produced real report rows from both its
   cron schedule and a manual trigger; Grafana serving 28 populated
   dashboards. Full log: `docs/phase-logs/phase-7.md`.
+- [done] (technical-writer) README + `docs/order-flow.md` updated with
+  Airflow and kube-prometheus-stack, grounded in the merged Phase 7
+  state (ADR-016..021). PR #51.
 
 ## Log
 
