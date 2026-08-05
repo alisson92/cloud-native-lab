@@ -12,11 +12,18 @@ step below is traceable to a specific file.
   `orders.created` message; the worker consumes it and does a stubbed
   email/invoice.
 - **Async path 2 (Kafka, event log)**: backend produces an `order.created`
-  event to the `order-events` topic. No consumer ships in this repo yet
-  (Phase 6 exit gate was verified with a debug-only `gate-verifier`
-  identity, not a running workload — see
-  `docs/adr/015-kafka-gate-verifier-user.md`). Phase 7's Airflow reader is
-  the first real, workload-backed consumer and is not part of this diagram.
+  event to the `order-events` topic. Through Phase 6, no consumer shipped
+  in this repo (the exit gate was verified with a debug-only
+  `gate-verifier` identity, not a running workload — see
+  `docs/adr/015-kafka-gate-verifier-user.md`). As of Phase 7, Airflow's
+  `sales_report` DAG (`consume_order_events` task,
+  `gitops/data/airflow/dags-configmap.yaml`) is the first real,
+  workload-backed consumer — it replays the topic on a nightly schedule
+  (02:00 UTC) and on manual triggers, independently of the request path.
+  It is out of scope for this order-placement diagram below (it does not
+  run synchronously with an order being placed); see the root
+  [`README.md`](../README.md#architecture) for how it fits the overall
+  architecture.
 
 Both async publishes are **best-effort and non-blocking**: a publish
 failure is logged and swallowed, never surfaced to the HTTP caller, and
@@ -73,7 +80,7 @@ sequenceDiagram
     Worker->>Worker: handleOrderCreated(order)<br/>(stub: log "sending email + invoice")
     Worker->>RabbitMQ: ack
 
-    Note over Kafka: order-events is an immutable, replayable log.<br/>No consumer ships in this repo through Phase 6 —<br/>Phase 7's Airflow reader is the first real one.
+    Note over Kafka: order-events is an immutable, replayable log.<br/>Airflow's sales_report DAG (Phase 7) replays it nightly<br/>and on manual triggers — independently of this request path.
 ```
 
 ## Catalog read path (cache-aside, not order-specific)

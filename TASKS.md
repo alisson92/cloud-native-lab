@@ -136,6 +136,13 @@
   diagram element checked against `gitops/`/`apps/src/` in this session;
   ADR-007/009/011/012/015 outcomes reflected. Branch:
   `docs/readme-and-diagrams`.
+- [review] (technical-writer) README + order-flow follow-up: added Airflow
+  (LocalExecutor, ConfigMap DAG, shared metadata DB) and
+  kube-prometheus-stack (Prometheus/Grafana, no Alertmanager) to the
+  architecture diagram and prose, grounded in `gitops/apps/airflow.yaml`,
+  `gitops/apps/kube-prometheus-stack.yaml`,
+  `gitops/data/airflow/dags-configmap.yaml`. ADR-016..021 reflected. Branch
+  `docs/phase-7-readme-update`.
 
 ## Log
 
