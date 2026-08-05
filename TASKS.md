@@ -98,6 +98,10 @@
 - [done] (technical-writer) README + `docs/order-flow.md` updated with
   Airflow and kube-prometheus-stack, grounded in the merged Phase 7
   state (ADR-016..021). PR #51.
+- [done] (technical-writer) New runbook
+  `docs/runbooks/airflow-observability-verification.md`: DAG trigger/
+  poll/verify + Grafana dashboard/datasource checks, grounded in Phase
+  7's real live-verification bugs. PR #52.
 
 ## Log
 
