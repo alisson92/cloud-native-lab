@@ -1,0 +1,74 @@
+# ServiceMonitor for the backend's GET /metrics endpoint (Phase 7 follow-up
+# from docs/adr/016-kube-prometheus-stack-lab-sizing.md's Consequences: "the
+# application tier ... has no /metrics endpoint or ServiceMonitor today ...
+# Adding app instrumentation is explicitly out of scope for this task and
+# left as a follow-up." This closes that follow-up for backend only — the
+# /metrics endpoint itself is added by a parallel app-developer change on
+# apps/backend (branch phase-7/backend-metrics-and-mermaid-ci), not part of
+# this file.
+#
+# spec.selector.matchLabels targets the backend Service's own label
+# (gitops/services/backend/service.yaml: `selector: {app: backend}`), which
+# in turn selects pods carrying the same `app: backend` label
+# (deployment.yaml's pod template). Repo-wide, only plain `app:` labels are
+# used (no app.kubernetes.io/* convention anywhere under gitops/).
+#
+# spec.endpoints[0].port: "http" matches the Service's named port (`http`,
+# 8080 — service.yaml) rather than a raw port number, per the ServiceMonitor
+# CRD reference (Endpoint.port: "the name of the Service port ... takes
+# precedence over targetPort",
+# https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/Documentation/api-reference/api.md#monitoring.coreos.com/v1.Endpoint).
+# path: /metrics is explicit even though it is also the CRD's own documented
+# default ("If empty, Prometheus uses the default value (e.g. /metrics)"),
+# for readability. No `interval` set: Endpoint.interval is optional and
+# falls back to the global scrape interval; this chart's own
+# prometheus.prometheusSpec.scrapeInterval default is unset in
+# gitops/apps/kube-prometheus-stack.yaml, which the chart's values.yaml
+# documents as defaulting to 30s (comment above
+# `prometheus.prometheusSpec.scrapeInterval: ""` in the chart's own
+# values.yaml, chart 88.1.3: "Defaults to 30s", citing
+# prometheus-operator/prometheus-operator's promcfg.go) — no doc-grounded
+# reason to deviate for a single lab service.
+#
+# release: kube-prometheus-stack label — REQUIRED, contrary to what would
+# look like the chart's "default match-all" behavior. Verified live in this
+# session: the chart's own values.yaml
+# (prometheus.prometheusSpec.serviceMonitorSelector: {} AND
+# serviceMonitorSelectorNilUsesHelmValues: true, both left untouched by
+# gitops/apps/kube-prometheus-stack.yaml) look like match-all at first read,
+# but the chart's template
+# (charts/kube-prometheus-stack/templates/prometheus/prometheus.yaml) treats
+# an empty map as falsy in its `{{- if .Values...serviceMonitorSelector }}`
+# check and falls through to the `serviceMonitorSelectorNilUsesHelmValues`
+# branch, which renders:
+#   serviceMonitorSelector: {matchLabels: {release: "<Helm release name>"}}
+# Confirmed by rendering the exact chart version (`helm template myrelease
+# kube-prometheus-stack --version 88.1.3 -f <values matching this repo's
+# Application> --skip-crds`) in this session: the emitted Prometheus CR's
+# serviceMonitorSelector is `matchLabels: {release: "myrelease"}`, not `{}`.
+# Per Argo CD's Helm integration docs
+# (https://argo-cd.readthedocs.io/en/stable/user-guide/helm/, "Helm Release
+# Name": "By default, the Helm release name is equal to the Application
+# name"), and gitops/apps/kube-prometheus-stack.yaml sets no
+# `helm.releaseName`, so the live release name is the Application's own
+# name: "kube-prometheus-stack". Without this label, Prometheus would never
+# select this ServiceMonitor.
+#
+# Sync wave "2": same wave as service.yaml/deployment.yaml — this resource
+# targets the same backend Service and has no reason to reconcile later.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: backend
+  namespace: apps
+  labels:
+    release: kube-prometheus-stack
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  selector:
+    matchLabels:
+      app: backend
+  endpoints:
+    - port: http
+      path: /metrics
