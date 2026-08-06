@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const promClient = require('prom-client');
 const { createPool, bootstrapSchema } = require('./db');
 const { createRedisClient } = require('./redis');
 const { createRabbitMQChannel } = require('./rabbitmq');
@@ -9,6 +10,13 @@ const { getCatalog } = require('./catalog');
 const { createOrder, getOrder } = require('./orders');
 
 const PORT = process.env.PORT || 8080;
+
+// Node.js process/event-loop metrics (CPU, memory, GC, event-loop lag, etc.),
+// collected on the library's default registry. Per prom-client's own example
+// (https://github.com/siimon/prom-client/blob/master/example/server.js),
+// `collectDefaultMetrics()` is called once at module load and the same
+// `promClient.register` singleton is scraped by the /metrics route below.
+promClient.collectDefaultMetrics();
 
 async function main() {
   const pgPool = createPool();
@@ -52,6 +60,18 @@ async function main() {
         return;
       }
       res.json(order);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.get('/metrics', async (req, res, next) => {
+    try {
+      // Same trust boundary as /health: this Service is ClusterIP,
+      // scraped in-cluster only (e.g. by kube-prometheus-stack), so no
+      // auth is added here — matches the example in prom-client's README.
+      res.set('Content-Type', promClient.register.contentType);
+      res.end(await promClient.register.metrics());
     } catch (err) {
       next(err);
     }
