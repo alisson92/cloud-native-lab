@@ -86,7 +86,7 @@ flowchart TB
     end
 
     subgraph vault_ns["namespace: vault"]
-        Vault["Vault (dev mode)"]
+        Vault["Vault (standalone, file storage)"]
     end
 
     subgraph eso_ns["namespace: external-secrets"]
@@ -158,6 +158,10 @@ Notes grounded in the actual manifests (not the original plan):
 - Redis and RabbitMQ are plain `Deployment`s with no operator and no PVC
   (ADR-007, ADR-011): losing unconsumed cache/queue data on a pod restart
   is an accepted trade-off in this ephemeral lab.
+- Vault, unlike Redis/RabbitMQ, DOES use a PVC (standalone mode, `file`
+  storage backend, ADR-022): it persists the Kubernetes-auth roles/policies
+  and all KV secrets across restarts, at the cost of a manual
+  `vault operator unseal` after each one (see `scripts/unseal-vault.sh`).
 - Postgres uses the CloudNativePG operator, 1 instance, no HA (ADR-008).
   Kafka uses the Strimzi operator, 1-node KRaft cluster, no HA (ADR-012).
 - Kafka's internal listener is plaintext with SASL/SCRAM-SHA-512
@@ -213,7 +217,7 @@ gitops/         # Everything Argo CD reconciles
   services/     # Application workloads (backend, bff, frontend, worker)
 apps/           # Application source code, one directory per service
 docs/           # Vision, architecture, phases, conventions, ADRs, phase logs
-scripts/        # Operational scripts (e.g. Vault dev-mode bootstrap)
+scripts/        # Operational scripts (Vault one-time init/bootstrap, unseal)
 ```
 
 ## Running it locally (Kind)
@@ -249,15 +253,25 @@ any cloud spend, per
    [`terraform/delivery/README.md`](terraform/delivery/README.md) for why.
    Argo CD then reconciles everything under `gitops/` on its own.
 
-3. **Bootstrap Vault** (dev mode loses its Kubernetes auth method and KV
-   data on every restart, so this is re-run after any `vault-0` restart)
+3. **Bootstrap Vault** (one time only — standalone mode with the `file`
+   storage backend persists the Kubernetes auth method and KV data across
+   restarts; see step 3b for what to run after a `vault-0` restart instead)
 
    ```sh
    ./scripts/bootstrap-vault.sh
    ```
 
-   See the script's own header comment and
-   [`docs/adr/010-vault-bootstrap-script.md`](docs/adr/010-vault-bootstrap-script.md).
+   See the script's own header comment,
+   [`docs/adr/010-vault-bootstrap-script.md`](docs/adr/010-vault-bootstrap-script.md),
+   and
+   [`docs/adr/022-vault-standalone-file-storage.md`](docs/adr/022-vault-standalone-file-storage.md).
+
+   3b. **After any `vault-0` restart**, Vault comes back up sealed but with
+       all data intact — unseal it instead of re-bootstrapping:
+
+       ```sh
+       ./scripts/unseal-vault.sh
+       ```
 
 4. **Wait for everything to sync**
 

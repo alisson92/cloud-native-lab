@@ -17,10 +17,12 @@ least-privilege scoping (only `secret/data/rabbitmq`) to actually hold.
 
 ## Vault bootstrap
 
-Same one-time/idempotent bootstrap as every other service in this repo —
-see `gitops/data/rabbitmq/README.md`. `scripts/bootstrap-vault.sh` writes
-the `worker-read` policy and `worker` role in the same run as RabbitMQ's
-own KV credentials.
+Same one-time bootstrap as every other service in this repo — see
+`gitops/data/rabbitmq/README.md`. `scripts/bootstrap-vault.sh` writes the
+`worker-read` policy and `worker` role in the same run as RabbitMQ's own KV
+credentials. After any `vault-0` pod restart, run `scripts/unseal-vault.sh`
+instead (`docs/adr/022-vault-standalone-file-storage.md`) — this setup now
+persists, it only needs unsealing.
 
 ## Verifying the exit gate
 

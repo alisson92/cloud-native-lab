@@ -31,16 +31,21 @@ External Secrets Operator (ESO) — no credential ever written to Git. See:
 
 ## One-time Vault bootstrap
 
-Same reasoning as every other `gitops/data/*/README.md`: Vault dev-mode
-starts empty on every restart (`docs/adr/006-vault-dev-mode-for-lab.md`).
-Run `scripts/bootstrap-vault.sh` from the repo root once the `airflow`,
+Same reasoning as every other `gitops/data/*/README.md`: only the root
+token can write data or configure the Kubernetes auth method. Run
+`scripts/bootstrap-vault.sh` from the repo root **once** the `airflow`,
 `external-secrets`, `cloudnativepg-operator`, and `strimzi` Argo CD
-Applications report `Synced`/`Healthy` (and again after every Vault pod
-restart). It writes the "airflow" metadata-db role credential
-(`secret/airflow`), the "airflow" Kafka user credential
-(`secret/airflow-kafka`), the `airflow-read` policy (also granted read on
-`secret/postgres`, reusing the orders app credential), and the `airflow`
-Kubernetes-auth role.
+Applications report `Synced`/`Healthy`. It writes the "airflow"
+metadata-db role credential (`secret/airflow`), the "airflow" Kafka user
+credential (`secret/airflow-kafka`), the `airflow-read` policy (also
+granted read on `secret/postgres`, reusing the orders app credential), and
+the `airflow` Kubernetes-auth role.
+
+**After any `vault-0` pod restart**: Vault now persists this setup
+(`docs/adr/022-vault-standalone-file-storage.md`, superseding the
+dev-mode data loss `docs/adr/006-vault-dev-mode-for-lab.md` originally
+accepted) — it only comes back up sealed. Run `scripts/unseal-vault.sh`,
+not the bootstrap script.
 
 ## Verifying the exit gate
 

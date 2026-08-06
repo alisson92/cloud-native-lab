@@ -40,15 +40,20 @@ times as needed.
 
 ## ⚠️ Points of attention
 
-- **Vault dev-mode loses all state on every `vault-0` pod restart**
-  (`docs/adr/006-vault-dev-mode-for-lab.md`) — not just KV secrets, the
-  entire Kubernetes auth method too. If `vault-0` has restarted since the
-  last bootstrap (check its `AGE`/`RESTARTS` with
+- **Vault comes back up sealed after every `vault-0` pod restart**
+  (`docs/adr/022-vault-standalone-file-storage.md`, standalone mode with a
+  persistent `file` storage backend — supersedes the dev-mode data loss
+  `docs/adr/006-vault-dev-mode-for-lab.md` originally described). Unlike
+  dev mode, the Kubernetes auth method and all KV data survive the
+  restart; Vault just refuses requests until unsealed. If `vault-0` has
+  restarted since the last unseal (check its `AGE`/`RESTARTS` with
   `kubectl -n vault get pod vault-0`), every `SecretStore` in the cluster
   will fail with `403 permission denied` and every `ExternalSecret` will
-  show `SecretSyncedError`. **Always re-run `scripts/bootstrap-vault.sh`
-  first if there's any doubt** (step 1) — it is idempotent and safe to
-  run even when nothing is broken.
+  show `SecretSyncedError`. **Always run `scripts/unseal-vault.sh` first
+  if there's any doubt** (step 1) — it is idempotent, a no-op if Vault is
+  already unsealed. Only run `scripts/bootstrap-vault.sh` again if Vault
+  reports `initialized: false` (a genuinely fresh PVC), not for a routine
+  restart.
 - **A whole-node restart (Kind container itself, or the host machine)
   restarts every pod simultaneously**, including Argo CD's own
   controllers. Right after such a restart, `root-app`'s health can show a
@@ -73,16 +78,25 @@ times as needed.
 
 ## Steps
 
-### 1. Bootstrap Vault (safe to always run)
+### 1. Unseal Vault (safe to always run)
 
-`scripts/bootstrap-vault.sh` retrieves the dev-mode root token from
-`vault-0`'s own startup log, re-enables/reconfigures the Kubernetes auth
-method, and re-seeds every KV credential and policy/role pair this repo
-depends on. It caches generated passwords, so re-running it does not
-rotate credentials that are already in use.
+`scripts/unseal-vault.sh` checks whether Vault is sealed and, if so, applies
+the cached unseal key shares (`.vault-bootstrap-cache/vault-init.json`,
+written once by `scripts/bootstrap-vault.sh`). It is a no-op if Vault is
+already unsealed.
 
 ```bash
 cd cloud-native-lab
+bash scripts/unseal-vault.sh
+```
+
+**Expected result:** `==> Vault unsealed.` or `==> Vault is already
+unsealed. Nothing to do.`
+
+If this errors because `.vault-bootstrap-cache/vault-init.json` is missing
+(e.g. a fresh Kind cluster/PVC), run the one-time init instead:
+
+```bash
 bash scripts/bootstrap-vault.sh
 ```
 
@@ -299,7 +313,7 @@ place.
 
 | Symptom | Likely cause | Action |
 |---|---|---|
-| `SecretSyncedError` on any `ExternalSecret`, `403 permission denied` in `external-secrets` logs | Vault dev-mode lost its Kubernetes auth method (pod restart) | Re-run `bash scripts/bootstrap-vault.sh` (step 1) |
+| `SecretSyncedError` on any `ExternalSecret`, `403 permission denied` in `external-secrets` logs | Vault is sealed after a `vault-0` pod restart | Run `bash scripts/unseal-vault.sh` (step 1) |
 | `root-app` `NotFound` | `root-app` Application object was pruned (see ADR-014) | `kubectl apply -f gitops/root-app.yaml` |
 | `root-app` stuck `Degraded` for several minutes with every child resource actually healthy | Argo CD controller cache cold after a node/pod restart | Wait, then check `argocd app get root-app --core` for real per-resource health instead of the `Application` CR's summary |
 | `KafkaUser` not `Ready`, error mentions "authorization ACL rules ... not supported" | `Kafka` CR missing `spec.kafka.authorization` (should already be fixed — PR #28) | Confirm `gitops/data/kafka/cluster.yaml` has `authorization: {type: simple}`; if reverted, restore it |
@@ -315,8 +329,10 @@ place.
 - `docs/phases.md` — phase definitions and exit gates
 - `docs/phase-logs/phase-6.md` — full Phase 6 log, including every
   live-only bug this runbook's checks were designed to catch
-- `docs/adr/006-vault-dev-mode-for-lab.md` — why Vault loses state on
-  restart
+- `docs/adr/006-vault-dev-mode-for-lab.md` — original dev-mode trade-off
+- `docs/adr/022-vault-standalone-file-storage.md` — standalone/`file`
+  storage that superseded dev-mode's storage decision; why Vault now needs
+  unsealing, not re-bootstrapping, after a restart
 - `docs/adr/012-kafka-strimzi-kraft-and-vault-user.md`,
   `docs/adr/015-kafka-gate-verifier-user.md` — Kafka authentication/
   authorization design

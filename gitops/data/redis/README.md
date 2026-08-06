@@ -8,16 +8,14 @@ operator) was chosen.
 
 ## One-time Vault bootstrap (script, not GitOps — see why below)
 
-Same reasoning as `gitops/secrets-demo/README.md`: Vault dev-mode
-(`gitops/apps/vault.yaml`) starts empty on every restart, and only the
-root token can write data or configure the Kubernetes auth method.
+Same reasoning as `gitops/secrets-demo/README.md`: only the root token can
+write data or configure the Kubernetes auth method.
 
-Run `scripts/bootstrap-vault.sh` from the repo root once, after the
+Run `scripts/bootstrap-vault.sh` from the repo root **once**, after the
 `vault` and `external-secrets` Argo CD Applications report
-`Synced`/`Healthy`, and again after every Vault pod restart (see
-`docs/adr/006-vault-dev-mode-for-lab.md` and
-`docs/adr/010-vault-bootstrap-script.md`). It writes the Redis password,
-the `redis-read` policy, and the `redis` role, along with
+`Synced`/`Healthy` (see `docs/adr/010-vault-bootstrap-script.md` and
+`docs/adr/022-vault-standalone-file-storage.md`). It writes the Redis
+password, the `redis-read` policy, and the `redis` role, along with
 secrets-demo/Postgres/backend's setup in the same run:
 
 ```sh
@@ -25,8 +23,16 @@ secrets-demo/Postgres/backend's setup in the same run:
 ```
 
 The password is generated once and cached locally (gitignored, never
-committed) so reruns after a Vault restart write back the *same* password
-the running Redis instance already has — see the script's header comment.
+committed) so reruns write back the *same* password the running Redis
+instance already has — see the script's header comment.
+
+**After any `vault-0` pod restart**: Vault now persists this setup
+(`docs/adr/022-vault-standalone-file-storage.md`) — it only comes back up
+sealed. Run `scripts/unseal-vault.sh`, not the bootstrap script:
+
+```sh
+./scripts/unseal-vault.sh
+```
 
 ## Verifying the exit gate
 

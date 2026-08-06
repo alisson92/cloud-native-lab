@@ -11,27 +11,37 @@ directly by `root-app` (`gitops/root-app.yaml`, `directory.recurse: true`)
 
 ## One-time Vault bootstrap (script, not GitOps — see why below)
 
-Vault dev-mode (`gitops/apps/vault.yaml`) starts with no data and no
-Kubernetes auth method enabled: both must be configured through Vault's own
-API using its root token. This is inherently an imperative action against a
-running Vault process — it cannot be expressed as a Git-declared manifest
-without either (a) committing the root token somewhere Argo CD can read it
-(forbidden — this repo is public, see
+Vault (`gitops/apps/vault.yaml`, standalone mode with the `file` storage
+backend — `docs/adr/022-vault-standalone-file-storage.md`) starts with no
+data and no Kubernetes auth method enabled on a fresh PVC: both must be
+configured through Vault's own API using its root token. This is inherently
+an imperative action against a running Vault process — it cannot be
+expressed as a Git-declared manifest without either (a) committing the root
+token somewhere Argo CD can read it (forbidden — this repo is public, see
 `docs/adr/002-public-repo-for-branch-protection.md`), or (b) building a
 bootstrap Job that itself needs the same token to authenticate (same
-problem, one layer down). Worse: dev-mode's in-memory storage means this
-setup — including the Kubernetes auth method itself, not just KV data — is
-lost on every `vault-0` pod restart (`docs/adr/006-vault-dev-mode-for-lab.md`).
+problem, one layer down).
 
-Run `scripts/bootstrap-vault.sh` from the repo root once, after both the
+Run `scripts/bootstrap-vault.sh` from the repo root **once**, after both the
 `vault` and `external-secrets` Argo CD Applications report
-`Synced`/`Healthy`, and again after any `vault-0` pod restart. It is
-idempotent and bootstraps this directory's test secret/policy/role along
-with Postgres, Redis, and backend's (see `docs/adr/010-vault-bootstrap-script.md`
-for why one script replaced 4 separate manual procedures):
+`Synced`/`Healthy`. It runs `vault operator init` (first time only), then
+bootstraps this directory's test secret/policy/role along with Postgres,
+Redis, RabbitMQ, Kafka, backend, worker, and Airflow's in the same run (see
+`docs/adr/010-vault-bootstrap-script.md` for why one script replaced
+separate manual procedures, and `docs/adr/022-vault-standalone-file-storage.md`
+for why it is now a one-time script instead of a per-restart one):
 
 ```sh
 ./scripts/bootstrap-vault.sh
+```
+
+**After any `vault-0` pod restart**, standalone mode with file storage keeps
+all of the above (unlike the dev mode this lab used through Phase 7) — it
+only comes back up *sealed*. Run `scripts/unseal-vault.sh` instead of
+re-running the bootstrap script:
+
+```sh
+./scripts/unseal-vault.sh
 ```
 
 ## Verifying the exit gate
