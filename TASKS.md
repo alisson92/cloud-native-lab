@@ -102,6 +102,10 @@
   `docs/runbooks/airflow-observability-verification.md`: DAG trigger/
   poll/verify + Grafana dashboard/datasource checks, grounded in Phase
   7's real live-verification bugs. PR #52.
+- [done] (app-developer) backend `/metrics` via `prom-client` (11/11
+  tests pass on Node 22) + new isolated `mermaid-lint.yml` CI job
+  validating all Mermaid diagrams with `mmdc`. Branch
+  `phase-7/backend-metrics-and-mermaid-ci`, not yet PR'd.
 
 ## Log
 
