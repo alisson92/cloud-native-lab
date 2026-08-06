@@ -337,5 +337,4 @@ For the full sequence including GKE, see
 
 ## License
 
-No license file is present; treat this repository as "all rights reserved"
-unless a `LICENSE` file is added.
+[MIT](LICENSE).
