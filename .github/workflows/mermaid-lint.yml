@@ -1,0 +1,84 @@
+# Validates every Mermaid diagram embedded in the repo's Markdown files by
+# actually rendering it with the official Mermaid CLI (`mmdc`). A parse
+# error in a ```mermaid fenced block fails the job.
+#
+# Tool: @mermaid-js/mermaid-cli (https://github.com/mermaid-js/mermaid-cli).
+# `mmdc -i <file>.md -o <out>.md` (documented in the project's README,
+# "Markdown" processing example: `mmdc -i readme.template.md -o readme.md`)
+# scans a Markdown file for fenced ```mermaid blocks, renders each one to an
+# SVG, and rewrites the output Markdown to reference them. If a block fails
+# to parse, `mmdc` prints the Mermaid parser error and exits non-zero — a
+# file with zero Mermaid blocks (or all-valid ones) exits 0 ("No mermaid
+# charts found in Markdown input" / rendered successfully). Verified in this
+# session against a deliberately broken scratch diagram before writing this
+# workflow (not committed).
+#
+# `mmdc` runs Chrome headless via Puppeteer, which needs `unzip` to unpack
+# its downloaded browser (undocumented in the CLI's own README, hit locally
+# in this session: "no zip archiver is available") plus the standard set of
+# shared libraries listed in Puppeteer's own troubleshooting guide
+# (https://pptr.dev/troubleshooting#chrome-doesnt-launch-on-linux) for
+# running headless Chrome on a minimal Debian/Ubuntu base — both installed
+# below before invoking `mmdc`.
+name: mermaid-lint
+
+on:
+  push:
+    paths: ["**/*.md"]
+  pull_request:
+    paths: ["**/*.md"]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Puppeteer/Chrome headless Linux dependencies, per pptr.dev's own
+      # troubleshooting guide (see file header) plus `unzip`, required by
+      # Puppeteer's browser downloader to extract the Chrome archive it
+      # fetches on first install.
+      - name: Install headless Chrome dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            unzip ca-certificates fonts-liberation libasound2 \
+            libatk-bridge2.0-0 libatk1.0-0 libc6 libcairo2 libcups2 \
+            libdbus-1-3 libexpat1 libfontconfig1 libgbm1 libglib2.0-0 \
+            libgtk-3-0 libnspr4 libnss3 libpango-1.0-0 libpangocairo-1.0-0 \
+            libx11-6 libx11-xcb1 libxcb1 libxcomposite1 libxcursor1 \
+            libxdamage1 libxext6 libxfixes3 libxi6 libxrandr2 libxrender1 \
+            libxss1 libxtst6 lsb-release wget xdg-utils
+
+      - name: Install mermaid-cli
+        run: npm install -g @mermaid-js/mermaid-cli
+
+      # `--no-sandbox` is required to run headless Chrome as the runner's
+      # default (non-root, but still sandbox-restricted in containers) user
+      # per mermaid-cli's own documented Linux sandbox workaround
+      # (docs/linux-sandbox-issue.md in the mermaid-cli repo).
+      - name: Write Puppeteer no-sandbox config
+        run: |
+          echo '{"args": ["--no-sandbox"]}' > /tmp/puppeteer-config.json
+
+      # Render every Markdown file's Mermaid blocks to a throwaway temp
+      # file. mmdc exits 0 for files with no Mermaid blocks and for files
+      # where every block parses; it exits non-zero and prints the parser
+      # error for any block that doesn't — that non-zero exit fails this
+      # step (and the job) via `set -e`.
+      - name: Validate Mermaid diagrams in Markdown
+        run: |
+          set -euo pipefail
+          status=0
+          while IFS= read -r -d '' file; do
+            echo "Checking $file"
+            if ! mmdc -p /tmp/puppeteer-config.json -i "$file" -o /tmp/mermaid-lint-out.md; then
+              echo "::error file=$file::Mermaid diagram failed to render"
+              status=1
+            fi
+          done < <(find . -name '*.md' -not -path './node_modules/*' -print0)
+          exit "$status"
