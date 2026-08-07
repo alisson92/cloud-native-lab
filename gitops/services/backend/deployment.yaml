@@ -111,7 +111,7 @@ spec:
         runAsGroup: 1000
       containers:
         - name: backend
-          image: ghcr.io/alisson92/backend:ca05f6b833b23500531478cc6a053608e7ac2252
+          image: ghcr.io/alisson92/backend:bfc61fd80f7e9e73fd0f584a6db3af4fc2e08f39
           ports:
             - containerPort: 8080
               name: http
