@@ -103,6 +103,18 @@
   poll/verify + Grafana dashboard/datasource checks, grounded in Phase
   7's real live-verification bugs. PR #52.
 
+## Vault storage re-evaluation (owner: security-engineer) — not phase-gating
+
+- (security-engineer) Re-evaluated ADR-006 Decision 1 (dev-mode storage)
+  after 4 dev-mode data-loss incidents (Phases 3/5/6/7). Switched Vault to
+  standalone mode + `file` storage on a local PVC (Kind's default
+  StorageClass); manual unseal after restart accepted as trade-off, no
+  KMS. `scripts/bootstrap-vault.sh` trimmed to one-time init; new
+  `scripts/unseal-vault.sh` for restarts. ADR-006 Decision 2 (Kubernetes
+  auth for ESO) untouched. Key decision: ADR-022 (supersedes ADR-006
+  Decision 1 only; updates ADR-010). Branch:
+  `phase-7/vault-standalone-storage`, not yet reviewed/merged.
+
 ## Log
 
 - (orchestrator) Phase 1 log archived to `docs/phase-logs/phase-1.md`;

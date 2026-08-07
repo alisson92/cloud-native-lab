@@ -48,15 +48,14 @@ the same issues.
 
 ## ⚠️ Points of attention
 
-- **Vault dev-mode loses all state on every `vault-0` pod restart**
-  (`docs/adr/006-vault-dev-mode-for-lab.md`), the same as every other phase.
-  If in doubt, re-run `bash scripts/bootstrap-vault.sh` first (step 1) — it
-  is idempotent. The script itself had a latent SIGPIPE bug in early Phase
-  7 checkouts (piping `vault-0` logs into `grep -m1`, which can close the
-  pipe before `kubectl logs` finishes writing); it is fixed in the current
-  version, but if you are on an old checkout and the script errors out with
-  a broken-pipe message on its first `echo`, pull `main` before
-  troubleshooting further.
+- **Vault comes back up sealed after every `vault-0` pod restart**
+  (`docs/adr/022-vault-standalone-file-storage.md`, standalone mode with a
+  persistent `file` backend — supersedes the dev-mode data loss
+  `docs/adr/006-vault-dev-mode-for-lab.md` originally described for every
+  phase). If in doubt, run `bash scripts/unseal-vault.sh` first (step 1) —
+  it is idempotent, a no-op if Vault is already unsealed. Only fall back to
+  `bash scripts/bootstrap-vault.sh` if Vault reports `initialized: false`
+  (a genuinely fresh PVC).
 - **Argo CD's automated-sync operations cache the rendered Helm manifest at
   operation start.** If a fix lands as a new commit while an `airflow` or
   `kube-prometheus-stack` Application sync is already retrying (e.g. stuck
@@ -99,15 +98,18 @@ the same issues.
 
 ## Steps
 
-### 1. Bootstrap Vault (safe to always run)
+### 1. Unseal Vault (safe to always run)
 
 ```bash
 cd cloud-native-lab
-bash scripts/bootstrap-vault.sh
+bash scripts/unseal-vault.sh
 ```
 
-**Expected result:** ends with `==> Done. Verify with each directory's
-'Verifying the exit gate' section.` and no `Error` lines.
+**Expected result:** `==> Vault unsealed.` or `==> Vault is already
+unsealed. Nothing to do.` If it errors because
+`.vault-bootstrap-cache/vault-init.json` is missing, run the one-time init
+instead: `bash scripts/bootstrap-vault.sh` (ends with `==> Done. Verify
+with each directory's 'Verifying the exit gate' section.`).
 
 ---
 
@@ -328,7 +330,7 @@ database; there is nothing to revert.
 
 | Symptom | Likely cause | Action |
 |---|---|---|
-| `SecretSyncedError` on any `airflow` namespace `ExternalSecret`, `403 permission denied` in `external-secrets` logs | Vault dev-mode lost its Kubernetes auth method (pod restart) | Re-run `bash scripts/bootstrap-vault.sh` (step 1) |
+| `SecretSyncedError` on any `airflow` namespace `ExternalSecret`, `403 permission denied` in `external-secrets` logs | Vault is sealed after a `vault-0` pod restart | Run `bash scripts/unseal-vault.sh` (step 1) |
 | `airflow` or `kube-prometheus-stack` Application stuck `Progressing`/`Degraded`, and a newer commit with the fix already exists in Git | Argo CD's automated-sync operation cached the rendered Helm manifest at operation start and is retrying against the stale render, not the newer commit | `argocd app terminate-op <app>` (retry/wait if it errors with "another operation is already in progress"), then confirm the live object has the expected value: `kubectl get application <app> -n argocd -o jsonpath='{.spec.source.helm.valuesObject}'`, then `argocd app sync <app> --prune`. If `root-app` itself is behind (`kubectl get application root-app -n argocd -o jsonpath='{.status.sync.revision}'` vs `git rev-parse origin/main`), sync `root-app` first |
 | Newer DAG code (per `git log gitops/data/airflow/dags-configmap.yaml`) does not seem to run, even though the ConfigMap synced | `subPath`-mounted ConfigMap volumes don't live-update via kubelet | `kubectl rollout restart statefulset/airflow-scheduler deployment/airflow-dag-processor -n airflow` |
 | `airflow-run-airflow-migrations` or `airflow-create-user` Job stuck with an outdated pod spec after a `gitops/apps/airflow.yaml` fix synced | Kubernetes Jobs are immutable (`spec.template` can't be patched); Argo CD can't reconcile the running Job's spec in place | `kubectl delete job <name> -n airflow` — Argo CD recreates it fresh from the already-correct Git state on the next sync |
@@ -348,8 +350,10 @@ database; there is nothing to revert.
   dashboards live"
 - `TASKS.md` — Phase 7 log entries, including every live-only bug this
   runbook's checks were designed to catch
-- `docs/adr/006-vault-dev-mode-for-lab.md` — why Vault loses state on
-  restart
+- `docs/adr/006-vault-dev-mode-for-lab.md` — original dev-mode trade-off
+- `docs/adr/022-vault-standalone-file-storage.md` — standalone/`file`
+  storage that superseded it; why Vault now needs unsealing, not
+  re-bootstrapping, after a restart
 - `docs/adr/010-vault-bootstrap-script.md` — why a script, not
   `standalone` mode
 - `docs/adr/016-kube-prometheus-stack-lab-sizing.md` — Alertmanager/

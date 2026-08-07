@@ -40,11 +40,16 @@ terraform.rc
 *.pem
 *.key
 
-# --- scripts/bootstrap-vault.sh local password cache ---
-# Generated Postgres/Redis passwords, cached locally so re-running the
-# bootstrap after a Vault dev-mode restart is idempotent instead of
-# rotating credentials already-running workloads still expect. Never
-# committed — see scripts/bootstrap-vault.sh's header comment.
+# --- scripts/bootstrap-vault.sh / scripts/unseal-vault.sh local cache ---
+# Generated Postgres/Redis/RabbitMQ/Kafka/Airflow passwords, cached locally
+# so re-running the bootstrap is idempotent instead of rotating credentials
+# already-running workloads still expect. Also holds vault-init.json (the
+# one-time `vault operator init` output: unseal keys + root token) since
+# ADR-022 switched Vault to standalone mode with a persistent `file`
+# storage backend — those must survive every `vault-0` restart, and cannot
+# land in this public Git repo. Never committed — see
+# scripts/bootstrap-vault.sh's header comment and
+# docs/adr/022-vault-standalone-file-storage.md.
 .vault-bootstrap-cache/
 
 # --- Python (Airflow DAGs, automation, scripts) ---

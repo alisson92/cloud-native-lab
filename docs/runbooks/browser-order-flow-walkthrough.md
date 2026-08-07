@@ -39,14 +39,16 @@ on the Kind cluster.
 
 ## ⚠️ Points of attention
 
-- **Vault dev-mode loses all state on every pod restart**
-  (`docs/adr/006-vault-dev-mode-for-lab.md`). If `vault-0` restarted since
-  the bootstrap was last run, the `ExternalSecret` objects for `backend`,
-  `postgres`, and `redis` will silently stop syncing
+- **Vault comes back up sealed after every pod restart**
+  (`docs/adr/022-vault-standalone-file-storage.md`, standalone mode with a
+  persistent `file` backend — supersedes the dev-mode data loss
+  `docs/adr/006-vault-dev-mode-for-lab.md` originally described). If
+  `vault-0` restarted since the last unseal, the `ExternalSecret` objects
+  for `backend`, `postgres`, and `redis` will silently stop syncing
   (`SecretSyncedError`), and the backend will be left without valid
-  credentials. This already happened once during Phase 5 and went
-  unnoticed for ~14h — always check the Vault bootstrap prerequisite
-  before assuming "this shouldn't be broken."
+  credentials. Dev mode's version of this already happened once during
+  Phase 5 and went unnoticed for ~14h — always run
+  `scripts/unseal-vault.sh` before assuming "this shouldn't be broken."
 - **`port-forward` runs in the foreground** — it blocks the terminal while
   active. Run it in the background (`&`) or in a separate tab, and
   remember to stop it at the end (cleanup step).
@@ -232,7 +234,7 @@ don't need to be reverted (lab data, ephemeral environment by design —
 | Symptom | Likely cause | Action |
 |---|---|---|
 | `kubectl -n apps get pod` shows a pod not `Running`/`Ready` | Image not found (`ImagePullBackOff`) or `CrashLoopBackOff` from a Postgres/Redis connection failure at startup | `kubectl -n apps describe pod <pod>` and `kubectl -n apps logs <pod>`. If `ImagePullBackOff`, confirm the GHCR packages are public (`docker pull ghcr.io/alisson92/<service>:<tag>` without logging in). Consider the `k8s-debug` skill for a guided investigation. |
-| `backend-credentials` shows `SecretSyncedError` | Vault dev-mode restarted and lost its bootstrap (`ADR-006`) | Re-run the manual bootstrap in `gitops/services/backend/README.md` (and, if needed, `gitops/data/postgres/README.md` and `gitops/data/redis/README.md` too — a Vault restart drops **every** role at once, not just the backend's). |
+| `backend-credentials` shows `SecretSyncedError` | Vault is sealed after a `vault-0` restart (`ADR-022`) | Run `scripts/unseal-vault.sh` (see `gitops/services/backend/README.md`) — a Vault restart affects **every** role/secret at once, not just the backend's, but they all persist now; only the unseal is needed. |
 | Browser page loads but the catalog is empty or shows a generic error | Backend couldn't read its credentials or can't reach Postgres/Redis | Test directly: `kubectl -n apps exec deploy/backend -- wget -qO- http://localhost:8080/health`. If that fails, check step 2 (ExternalSecret) before anything else. |
 | `kubectl port-forward` refuses the connection or drops on its own | Port 8082 already in use locally, or the frontend pod restarted mid-tunnel | Check for another active `port-forward` (`lsof -i :8082` or similar) and stop it; redo step 3. |
 | `root-app` stuck `OutOfSync`/`Degraded` | Some resource elsewhere in the `gitops/` tree (not necessarily Phase 5) is blocking the sync wave — Argo CD applies the whole tree as one operation | Check controller logs: `kubectl -n argocd logs -l app.kubernetes.io/name=argocd-application-controller --tail=100`. Look for a `SecretStore`/`ExternalSecret` error in any namespace, not just `apps`. |
@@ -246,5 +248,8 @@ don't need to be reverted (lab data, ephemeral environment by design —
 - `docs/vision.md` — role of each component in the scenario (frontend, BFF, backend, Postgres, Redis)
 - `gitops/services/README.md` — Phase 5 manifest layout
 - `gitops/services/backend/README.md` — Vault bootstrap for the backend
-- `docs/adr/006-vault-dev-mode-for-lab.md` — why Vault loses state on every restart
+- `docs/adr/006-vault-dev-mode-for-lab.md` — original dev-mode trade-off
+- `docs/adr/022-vault-standalone-file-storage.md` — standalone/`file`
+  storage that superseded it; why Vault now needs unsealing, not
+  re-bootstrapping, after a restart
 - `docs/phase-logs/phase-5.md` — full Phase 5 log, including the live-only bugs found while validating this runbook

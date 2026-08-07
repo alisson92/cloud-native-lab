@@ -94,9 +94,21 @@ multi-step manual ritual. A human (or a future automated health check)
 still has to notice the ExternalSecret/pod failures and *decide* to run
 it; this ADR does not add automatic detection.
 
-Deferred, not solved: this ADR confirms — rather than removes — that
-switching to standalone/HA mode is blocked on this lab having no
-auto-unseal mechanism. If a future phase adds one (e.g. GCP Cloud KMS,
-available once this lab targets real GKE per `docs/vision.md`), that is
-the point to revisit ADR-006 and retire this script in favor of
-persistent storage with auto-unseal, not before.
+Deferred, not solved (status at the time this ADR was written): this ADR
+confirmed — rather than removed — that switching to standalone/HA mode was
+blocked on this lab having no auto-unseal mechanism, and deferred the
+question to "a future phase adds one (e.g. GCP Cloud KMS)".
+
+**Revisited in `docs/adr/022-vault-standalone-file-storage.md`, without
+adding a KMS.** After 4 separate dev-mode data-loss incidents (Phases
+3/5/6/7), the question was reopened on a narrower basis: accept manual
+unseal after every restart as a permanent trade-off (not something to
+avoid via KMS), and use standalone + file storage only to stop losing the
+Kubernetes-auth role/policy and KV data, not to remove the unseal step.
+**Outcome: ADR-022 supersedes this ADR's rejection.** Vault now runs in
+standalone mode with the `file` backend; `scripts/bootstrap-vault.sh` is
+trimmed to a true one-time init (it used to redo everything on every
+restart); a new `scripts/unseal-vault.sh` handles the now-routine
+post-restart unseal. See ADR-022 for how the unseal-key/root-token custody
+question — real, and not fully solved even now — was assessed and judged
+acceptable at this lab's single-operator, single-Kind-cluster scale.

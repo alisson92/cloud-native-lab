@@ -38,16 +38,14 @@ are removed once the worker acknowledges them) — see
 
 ## One-time Vault bootstrap (script, not GitOps — see why below)
 
-Same reasoning as `gitops/data/postgres/README.md`: Vault dev-mode
-(`gitops/apps/vault.yaml`) starts empty on every restart, and only the
-root token can write data or configure the Kubernetes auth method.
+Same reasoning as `gitops/data/postgres/README.md`: only the root token can
+write data or configure the Kubernetes auth method.
 
-Run `scripts/bootstrap-vault.sh` from the repo root once, after the
+Run `scripts/bootstrap-vault.sh` from the repo root **once**, after the
 `strimzi` and `external-secrets` Argo CD Applications report
-`Synced`/`Healthy`, and again after every Vault pod restart (see
-`docs/adr/006-vault-dev-mode-for-lab.md` and
-`docs/adr/010-vault-bootstrap-script.md`). It writes the "backend" Kafka
-user's credentials (`username=backend`, matching `user.yaml`'s
+`Synced`/`Healthy` (see `docs/adr/010-vault-bootstrap-script.md` and
+`docs/adr/022-vault-standalone-file-storage.md`). It writes the "backend"
+Kafka user's credentials (`username=backend`, matching `user.yaml`'s
 `metadata.name` — Strimzi requires this match), the "airflow" Kafka user's
 credentials (`secret/airflow-kafka`, matching `airflow-user.yaml`'s
 `metadata.name`), the `kafka-read` policy (covering both paths), and the
@@ -58,8 +56,16 @@ credentials (`secret/airflow-kafka`, matching `airflow-user.yaml`'s
 ```
 
 The password is generated once and cached locally (gitignored, never
-committed) so reruns after a Vault restart write back the *same* password
-the running `KafkaUser`'s Secret reference already expects.
+committed) so reruns write back the *same* password the running
+`KafkaUser`'s Secret reference already expects.
+
+**After any `vault-0` pod restart**: Vault now persists this setup
+(`docs/adr/022-vault-standalone-file-storage.md`) — it only comes back up
+sealed. Run `scripts/unseal-vault.sh`, not the bootstrap script:
+
+```sh
+./scripts/unseal-vault.sh
+```
 
 ## Verifying the exit gate
 

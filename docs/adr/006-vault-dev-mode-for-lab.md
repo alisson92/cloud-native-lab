@@ -69,20 +69,32 @@ default) and a Vault-side role/policy (this repo's
 
 ## Consequences
 
+> **Storage superseded**: Decision 1 (dev-mode, in-memory storage) is
+> superseded by `docs/adr/022-vault-standalone-file-storage.md`, which
+> switches Vault to standalone mode with the `file` backend on a local PVC
+> after 4 separate dev-mode data-loss incidents across Phases 3/5/6/7.
+> **Decision 2 (Kubernetes auth method for ESO) is untouched and still
+> governs how ESO authenticates to Vault** — ADR-022 does not revisit it.
+> The "No TLS"/"No high availability"/"No auto-unseal" gaps below remain
+> accepted as-is; only the "in-memory storage, no persistence" line changed.
+
 **Production-hardening gap explicitly accepted for this lab** (must change
 before any GKE/production use, per `docs/vision.md`'s non-goals and
 ADR-004's local-first model):
 
 - No high availability — a single Vault replica; a pod restart is an outage.
-- No auto-unseal — moot in dev mode (auto-unsealed by design), but any
-  future move to standalone/HA mode needs a real auto-unseal mechanism
-  (e.g. GCP Cloud KMS) before that gap closes.
+- No auto-unseal — was moot in dev mode (auto-unsealed by design); now that
+  ADR-022 switches to standalone mode, manual unseal after every restart is
+  an explicitly accepted trade-off (see ADR-022) rather than something
+  deferred — a real auto-unseal mechanism (e.g. GCP Cloud KMS) is still not
+  in scope for this lab.
 - No TLS — `tlsDisable: true` (chart default), all Vault traffic in
   cluster-internal plaintext HTTP.
-- In-memory storage, no persistence — **all secrets are lost on every pod
-  restart**, including the Kubernetes-auth role/policy and the test KV
-  value; the manual bootstrap in `gitops/secrets-demo/README.md` must be
-  re-run after any Vault pod restart.
+- ~~In-memory storage, no persistence — all secrets are lost on every pod
+  restart~~ — superseded by ADR-022: standalone mode with the `file`
+  backend on a local PVC now persists the Kubernetes-auth role/policy and
+  all KV data across restarts; only a manual unseal is needed, not a full
+  re-bootstrap.
 
 Why acceptable now: ADR-004 already treats the Kind cluster as an ephemeral,
 local-first validation target, not a durable environment; Phase 3's exit
@@ -93,12 +105,14 @@ Kubernetes auth method means zero Vault credentials ever exist as
 Kubernetes Secrets or Git-tracked files, which is a strictly stronger
 posture than the token-based alternative even at dev-mode scale.
 
-Harder: every environment rebuild (new Kind cluster, or any Vault pod
-restart) requires re-running the manual bootstrap — an easy step to forget;
-mitigated by documenting the exact commands and by the exit-gate
-verification checklist in `gitops/secrets-demo/README.md` failing loudly
-(`ExternalSecret` reports an error, `secret-consumer` pod CrashLoopBackOffs)
-if it is skipped.
+Harder (as originally written under dev mode; see ADR-022 for how this
+changed — only new-cluster init still needs the full bootstrap, a restart
+now needs only an unseal): every environment rebuild (new Kind cluster, or
+any Vault pod restart) requires re-running the manual bootstrap — an easy
+step to forget; mitigated by documenting the exact commands and by the
+exit-gate verification checklist in `gitops/secrets-demo/README.md` failing
+loudly (`ExternalSecret` reports an error, `secret-consumer` pod
+CrashLoopBackOffs) if it is skipped.
 
 Before any GKE/production use: replace dev mode with a supported
 production topology (Raft HA storage + auto-unseal via cloud KMS + TLS),

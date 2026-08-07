@@ -16,28 +16,34 @@ event log: `order-events`, for future consumers like Airflow) — see
 
 ## One-time Vault bootstrap (script, not GitOps — see why below)
 
-Same reasoning as `gitops/data/postgres/README.md`: Vault dev-mode
-(`gitops/apps/vault.yaml`) starts empty on every restart, and only the root
-token can write policies or configure auth roles. This step does NOT write
-any new secret data — backend reads the SAME `secret/postgres`,
-`secret/redis`, `secret/rabbitmq`, and `secret/kafka` KV paths already
-bootstrapped by their own directories (`gitops/data/postgres/README.md`,
+Same reasoning as `gitops/data/postgres/README.md`: only the root token can
+write policies or configure auth roles. This step does NOT write any new
+secret data — backend reads the SAME `secret/postgres`, `secret/redis`,
+`secret/rabbitmq`, and `secret/kafka` KV paths already bootstrapped by
+their own directories (`gitops/data/postgres/README.md`,
 `gitops/data/redis/README.md`, `gitops/data/rabbitmq/README.md`,
 `gitops/data/kafka/README.md`). It only adds a new policy/role scoped to
 this namespace's `vault-auth` ServiceAccount, distinct from
 `postgres-read`/`redis-read`/`rabbitmq-read`/`kafka-read` for
 least-privilege scoping per role.
 
-Run `scripts/bootstrap-vault.sh` from the repo root once, after the
+Run `scripts/bootstrap-vault.sh` from the repo root **once**, after the
 `vault`, `external-secrets`, and this directory's Applications report
-`Synced`/`Healthy`, and again after every Vault pod restart (see
-`docs/adr/006-vault-dev-mode-for-lab.md` and
-`docs/adr/010-vault-bootstrap-script.md`). It writes the `backend-read`
-policy and `backend` role along with every other service's setup in
-the same run:
+`Synced`/`Healthy` (see `docs/adr/010-vault-bootstrap-script.md` and
+`docs/adr/022-vault-standalone-file-storage.md`). It writes the
+`backend-read` policy and `backend` role along with every other service's
+setup in the same run:
 
 ```sh
 ./scripts/bootstrap-vault.sh
+```
+
+**After any `vault-0` pod restart**: Vault now persists this setup
+(`docs/adr/022-vault-standalone-file-storage.md`) — it only comes back up
+sealed. Run `scripts/unseal-vault.sh`, not the bootstrap script:
+
+```sh
+./scripts/unseal-vault.sh
 ```
 
 ## Verifying the exit gate

@@ -1,42 +1,57 @@
 #!/usr/bin/env bash
 #
-# bootstrap-vault.sh — idempotent Vault dev-mode bootstrap for this lab.
+# bootstrap-vault.sh — ONE-TIME Vault init + Kubernetes-auth/KV setup for
+# this lab (standalone mode, file storage backend).
 #
 # WHY THIS EXISTS
-# Vault runs in dev mode (docs/adr/006-vault-dev-mode-for-lab.md): all data
-# is stored in-memory, so a `vault-0` pod restart wipes EVERYTHING —
-# including the Kubernetes auth method itself (`vault auth enable
-# kubernetes`), every policy/role, and every KV value
-# (developer.hashicorp.com/vault/docs/concepts/dev-server: "All data is
-# stored (encrypted) in-memory" and "will lose all data on every
-# restart"). Before this script, 4 near-identical manual procedures lived
-# in 4 READMEs; this script replaces all of them with one idempotent run.
-# See docs/adr/010-vault-bootstrap-script.md for why a script was chosen
-# over switching Vault to standalone mode.
+# Vault now runs in standalone mode with the `file` storage backend on a
+# local PVC (docs/adr/022-vault-standalone-file-storage.md, superseding
+# ADR-006's dev-mode storage decision only). Unlike dev mode, this PERSISTS
+# the Kubernetes auth method, every policy/role, and every KV value across
+# `vault-0` pod restarts — so this script only needs to run once per fresh
+# Vault storage lifetime (once per PVC), not after every restart.
+#
+# After a restart, Vault starts SEALED (developer.hashicorp.com/vault/docs/
+# concepts/seal) but keeps everything this script wrote. Run
+# scripts/unseal-vault.sh instead — do NOT re-run this script on a restart,
+# it is intentionally NOT what fixes a sealed Vault.
+#
+# Before this script existed, this ritual was duplicated across READMEs
+# (docs/adr/010-vault-bootstrap-script.md); this script still writes all of
+# it in one run, safe to re-run if a future phase adds a new consumer (the
+# role/policy/KV section below stays idempotent).
 #
 # WHEN TO RUN
 # - Once, after `vault` and `external-secrets` (gitops/apps/) report
-#   Synced/Healthy on a fresh cluster.
-# - Again, any time the `vault-0` pod restarts (check with
-#   `kubectl -n vault get pod vault-0` — a low `RESTARTS` count changing,
-#   or a new pod `AGE`, means it happened). Re-running is always safe:
-#   every step below is written to be a no-op (or a harmless overwrite) on
-#   an already-bootstrapped Vault.
+#   Synced/Healthy on a fresh cluster (fresh PVC = uninitialized Vault).
+# - Again ONLY if a future phase adds a new Kubernetes-auth role/policy/KV
+#   path — re-running is safe (idempotent) and will skip straight past the
+#   already-completed init/unseal steps.
+# - NOT after every `vault-0` restart — use scripts/unseal-vault.sh for
+#   that (this script errors out if Vault is sealed, to avoid confusing the
+#   two operations).
 #
 # WHAT IT NEVER DOES
-# - Never writes the root token to any file, this repo, or a Kubernetes
-#   Secret. It is read from `vault-0`'s own startup log for this single
-#   run and lives only in this script's process memory.
-# - Never writes a real credential into this repo. Postgres/Redis
-#   passwords are generated locally and cached OUTSIDE git (see
-#   CACHE_DIR below, which is .gitignore'd) purely so that re-running
-#   this script after a Vault restart writes back the SAME password an
-#   already-running Postgres/Redis instance still expects — Vault losing
-#   its copy of a password does not mean the workload using it forgets it
-#   too.
+# - Never writes the root token or unseal keys into this repo or a
+#   Kubernetes Secret. `vault operator init`'s output is cached ONLY in
+#   the local, .gitignore'd CACHE_DIR below (see
+#   docs/adr/022-vault-standalone-file-storage.md's "custody question"
+#   section for why this is judged acceptable at this lab's scale, and what
+#   is lost if that cache is lost: the Vault PVC becomes unrecoverable, but
+#   nothing else in this GitOps-managed lab depends on it surviving).
+# - Never writes a real credential into this repo. Postgres/Redis/RabbitMQ/
+#   Kafka/Airflow passwords are generated locally and cached OUTSIDE git
+#   (see CACHE_DIR below) purely so re-running this script (e.g. to add a
+#   new consumer) writes back the SAME password an already-running
+#   workload still expects.
 #
 # Docs consulted:
-# - https://developer.hashicorp.com/vault/docs/concepts/dev-server
+# - https://developer.hashicorp.com/vault/docs/concepts/seal
+#   (vault operator init/unseal flow, Shamir default 5 shares / 3 threshold)
+# - https://developer.hashicorp.com/vault/docs/commands/operator/init
+#   (-format=json output fields: unseal_keys_b64, root_token)
+# - https://developer.hashicorp.com/vault/docs/commands/status
+#   (-format=json fields: initialized, sealed; exit code 2 = sealed)
 # - https://developer.hashicorp.com/vault/docs/auth/kubernetes
 # - https://developer.hashicorp.com/vault/docs/secrets/kv/kv-v2
 # - https://developer.hashicorp.com/vault/docs/commands/auth/list
@@ -46,13 +61,15 @@ set -euo pipefail
 VAULT_NAMESPACE="vault"
 VAULT_POD="vault-0"
 
-# Local, gitignored cache for generated Postgres/Redis passwords, so reruns
-# after a Vault restart are idempotent instead of rotating credentials that
-# already-running workloads (Postgres/Redis, backed by their own PVCs, which
-# do NOT lose state on a Vault restart) still expect. Never committed — see
-# .gitignore.
+# Local, gitignored cache for the one-time `vault operator init` output
+# (unseal keys + root token — NEW, see docs/adr/022) and for generated
+# Postgres/Redis/RabbitMQ/Kafka/Airflow passwords (unchanged from
+# docs/adr/010), so reruns are idempotent instead of rotating credentials
+# that already-running workloads (backed by their own PVCs, unaffected by a
+# Vault restart) still expect. Never committed — see .gitignore.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CACHE_DIR="${REPO_ROOT}/.vault-bootstrap-cache"
+INIT_FILE="${CACHE_DIR}/vault-init.json"
 
 # trap ensures the root token never lingers in the environment after this
 # script exits, even on error (CLAUDE.md script convention: set -euo
@@ -62,13 +79,45 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "==> Retrieving dev-mode root token from ${VAULT_POD}'s startup log..."
-VAULT_ROOT_TOKEN="$(kubectl -n "${VAULT_NAMESPACE}" logs "${VAULT_POD}" 2>/dev/null \
-  | grep -m1 'Root Token:' | awk '{print $NF}')"
+# `vault status` exits non-zero when sealed (2) even though it still prints
+# valid JSON (developer.hashicorp.com/vault/docs/commands/status: 0 =
+# unsealed, 1 = error, 2 = sealed) -- `|| true` keeps `set -e` from aborting
+# on the expected sealed/uninitialized exit codes; `.initialized` is read
+# from the JSON body either way.
+mkdir -p "${CACHE_DIR}"
+chmod 700 "${CACHE_DIR}"
 
-if [[ -z "${VAULT_ROOT_TOKEN}" ]]; then
-  echo "ERROR: could not find 'Root Token:' in '${VAULT_POD}' logs." >&2
-  echo "Is the vault Argo CD Application Synced/Healthy? (kubectl -n ${VAULT_NAMESPACE} get pod ${VAULT_POD})" >&2
+status_json="$(kubectl -n "${VAULT_NAMESPACE}" exec "${VAULT_POD}" -- \
+  vault status -format=json || true)"
+initialized="$(echo "${status_json}" | jq -r '.initialized')"
+
+if [[ "${initialized}" != "true" ]]; then
+  echo "==> Vault is uninitialized. Running 'vault operator init' (one time only)..."
+  # Default 5 key shares / 3 threshold (developer.hashicorp.com/vault/docs/
+  # concepts/seal) — this lab does not need a custom split, single operator.
+  init_json="$(kubectl -n "${VAULT_NAMESPACE}" exec -i "${VAULT_POD}" -- \
+    vault operator init -key-shares=5 -key-threshold=3 -format=json)"
+  printf '%s' "${init_json}" >"${INIT_FILE}"
+  chmod 600 "${INIT_FILE}"
+  echo "    Unseal keys + root token cached in ${INIT_FILE} (gitignored, never committed)."
+elif [[ ! -f "${INIT_FILE}" ]]; then
+  echo "ERROR: Vault reports initialized=true but ${INIT_FILE} is missing." >&2
+  echo "This means the unseal keys/root token from a prior 'vault operator init' were lost." >&2
+  echo "Without them Vault's existing PVC cannot be unsealed again -- see the 'custody question'" >&2
+  echo "in docs/adr/022-vault-standalone-file-storage.md. Recovery requires deleting the PVC and" >&2
+  echo "re-initializing (all existing Vault data is lost either way at that point)." >&2
+  exit 1
+else
+  echo "==> Vault already initialized; reusing cached ${INIT_FILE}."
+fi
+
+echo "==> Ensuring Vault is unsealed for this run..."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"${SCRIPT_DIR}/unseal-vault.sh"
+
+VAULT_ROOT_TOKEN="$(jq -r '.root_token' "${INIT_FILE}")"
+if [[ -z "${VAULT_ROOT_TOKEN}" || "${VAULT_ROOT_TOKEN}" == "null" ]]; then
+  echo "ERROR: could not read root_token from ${INIT_FILE}." >&2
   exit 1
 fi
 
@@ -83,11 +132,12 @@ vault_exec() {
 }
 
 # Returns a cached password for $1 if one exists, else generates a new one
-# and caches it. 32 random bytes, base64-encoded
-# (developer.hashicorp.com/vault/docs/concepts/dev-server documents no
-# password-generation opinion; openssl rand is this repo's existing
-# convention-free choice for local secret generation, not persisted to
-# Vault's own storage since dev-mode can't persist it either).
+# and caches it. 32 random bytes, base64-encoded (no official Vault doc
+# opinion on password generation; openssl rand is this repo's existing
+# convention-free choice for local secret generation). Cached locally
+# rather than read back from Vault itself so a full Kind-cluster recreation
+# (fresh Vault PVC AND fresh Postgres/Redis/etc. PVCs at the same time)
+# still reuses the same value a human might already have noted down.
 get_or_generate_password() {
   local name="$1"
   local cache_file="${CACHE_DIR}/${name}"

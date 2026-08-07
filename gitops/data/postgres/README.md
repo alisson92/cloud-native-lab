@@ -16,19 +16,18 @@ CloudNativePG instance — see
 
 ## One-time Vault bootstrap (script, not GitOps — see why below)
 
-Same reasoning as `gitops/secrets-demo/README.md`: Vault dev-mode
-(`gitops/apps/vault.yaml`) starts empty on every restart, and only the
-root token can write data or configure the Kubernetes auth method — an
-inherently imperative action that cannot be Git-declared without
-committing the root token (forbidden, this repo is public per
+Same reasoning as `gitops/secrets-demo/README.md`: only the root token can
+write data or configure the Kubernetes auth method — an inherently
+imperative action that cannot be Git-declared without committing the root
+token (forbidden, this repo is public per
 `docs/adr/002-public-repo-for-branch-protection.md`).
 
-Run `scripts/bootstrap-vault.sh` from the repo root once, after the
+Run `scripts/bootstrap-vault.sh` from the repo root **once**, after the
 `vault`, `external-secrets`, and `cloudnativepg-operator` Argo CD
-Applications report `Synced`/`Healthy`, and again after every Vault pod
-restart (see `docs/adr/006-vault-dev-mode-for-lab.md` and
-`docs/adr/010-vault-bootstrap-script.md`). It writes the Postgres app-user
-credentials (`username=orders`, matching `cluster.yaml`'s
+Applications report `Synced`/`Healthy` (see
+`docs/adr/010-vault-bootstrap-script.md` and
+`docs/adr/022-vault-standalone-file-storage.md`). It writes the Postgres
+app-user credentials (`username=orders`, matching `cluster.yaml`'s
 `spec.bootstrap.initdb.owner` — CloudNativePG requires this match), the
 `postgres-read` policy (extended in Phase 7 to also read
 `secret/data/airflow`, for `airflow-role-externalsecret.yaml`), and the
@@ -40,9 +39,17 @@ the same run:
 ```
 
 The password is generated once and cached locally (gitignored, never
-committed) so reruns after a Vault restart write back the *same* password
-the running Postgres instance already has — see the script's header
-comment.
+committed) so reruns write back the *same* password the running Postgres
+instance already has — see the script's header comment.
+
+**After any `vault-0` pod restart**: Vault now persists this setup (file
+storage backend, `docs/adr/022-vault-standalone-file-storage.md`) — it
+only comes back up sealed. Run `scripts/unseal-vault.sh`, not the
+bootstrap script:
+
+```sh
+./scripts/unseal-vault.sh
+```
 
 ## Verifying the exit gate
 

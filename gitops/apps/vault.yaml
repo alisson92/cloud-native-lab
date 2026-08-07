@@ -1,17 +1,24 @@
-# Vault, dev-mode, via the official HashiCorp Helm chart
-# (Phase 3, docs/architecture.md "Secrets" layer).
+# Vault, standalone mode with file storage, via the official HashiCorp Helm
+# chart (Phase 3, docs/architecture.md "Secrets" layer).
 #
-# Dev mode (server.dev.enabled) runs a single Vault server with in-memory
-# storage, auto-initialized and auto-unsealed — no init/unseal flow, no
-# persistence, data lost on restart. This is explicitly acceptable for this
-# lab; see docs/adr/006-vault-dev-mode-for-lab.md for the trade-off and the
-# production-hardening gap it accepts.
+# Was dev-mode (server.dev.enabled, in-memory storage) through Phase 7, but
+# that lost the Kubernetes auth method and all KV data on 4 separate pod
+# restarts across Phases 3/5/6/7 (docs/phase-logs/phase-{3,5,6,7}.md), each
+# requiring a manual full re-bootstrap. Switched to standalone mode with the
+# `file` storage backend on a local PVC, which persists that data across
+# restarts — only a manual `vault operator unseal` is needed afterwards, an
+# explicitly accepted trade-off (no auto-unseal/KMS in scope for this lab).
+# See docs/adr/022-vault-standalone-file-storage.md for the full
+# re-evaluation; this supersedes ONLY docs/adr/006-vault-dev-mode-for-lab.md's
+# Decision 1 (dev-mode storage) — Decision 2 (Kubernetes auth method for ESO,
+# not a static token) is untouched.
 #
-# The chart's own default for the dev-mode root token (server.dev.devRootToken)
-# is left untouched here — we never set or reference it, so no token value
-# ever appears in this file. Retrieve it at runtime from the pod's own logs
-# only (`kubectl logs -n vault vault-0 | grep 'Root Token'`); never commit it.
-# See gitops/secrets-demo/README.md for the one-time bootstrap that uses it.
+# The root token and unseal key shares now come from a one-time `vault
+# operator init` (run by scripts/bootstrap-vault.sh) instead of being
+# reprinted to the pod's log on every restart. They are cached locally,
+# gitignored, in .vault-bootstrap-cache/vault-init.json — never in this file,
+# never committed. See scripts/bootstrap-vault.sh and
+# scripts/unseal-vault.sh.
 #
 # injector.enabled is set to false: the Vault Agent Injector (sidecar
 # mutating webhook) is a separate feature for injecting secrets into
@@ -21,11 +28,20 @@
 # used".
 #
 # Docs consulted:
-# - https://developer.hashicorp.com/vault/docs/platform/k8s/helm/run
-#   (dev-mode install, server.dev.enabled)
-# - https://developer.hashicorp.com/vault/docs/concepts/dev-server
-#   (dev-server behavior: in-memory storage, auto-unseal, data loss on
-#   restart)
+# - https://developer.hashicorp.com/vault/docs/platform/k8s/helm/configuration
+#   (server.standalone, server.dataStorage field reference)
+# - https://developer.hashicorp.com/vault/docs/configuration/storage/filesystem
+#   (file storage backend: single required `path`, no HA support)
+# - https://developer.hashicorp.com/vault/docs/concepts/seal
+#   (Shamir seal: vault operator init/unseal flow, taken on deliberately here)
+# - `helm show values hashicorp/vault --version 0.34.0` against
+#   https://helm.releases.hashicorp.com (confirmed chart defaults: standalone
+#   mode's built-in config already sets `storage "file" { path =
+#   "/vault/data" }` and `tls_disable = 1`; dataStorage defaults to
+#   enabled=true, size=10Gi, mountPath=/vault/data, storageClass=null).
+# - https://kind.sigs.k8s.io/docs/user/storage/ (Kind ships
+#   local-path-provisioner as the default StorageClass out of the box; no
+#   change needed in local/kind/kind-config.yaml).
 # - https://argo-cd.readthedocs.io/en/stable/user-guide/helm/
 #   (Helm chart repository as an Application source: repoURL + chart +
 #   targetRevision, no git repo needed)
@@ -55,11 +71,33 @@ spec:
     helm:
       valuesObject:
         server:
-          dev:
+          standalone:
+            # Explicit true (chart default is the sentinel "-", which
+            # resolves to standalone when dev/ha are both disabled) — this
+            # repo states modes explicitly rather than relying on an
+            # implicit fallback, same style as the prior dev.enabled: true.
+            # The chart's built-in standalone config (unmodified here) is
+            # `storage "file" { path = "/vault/data" }` +
+            # `listener "tcp" { tls_disable = 1 }` — verified via
+            # `helm show values`, see the file header for the source.
             enabled: true
-          # Requests/limits mandatory per docs/conventions.md. Sized for a
-          # single dev-mode server handling a handful of demo requests, not
-          # production load.
+          dataStorage:
+            # Chart default (enabled: true) — the PVC is what actually
+            # fixes the data-loss problem docs/adr/022 addresses.
+            enabled: true
+            # Reduced from the chart's 10Gi default: this lab's KV data is a
+            # handful of short credential strings (Postgres/Redis/RabbitMQ/
+            # Kafka/Airflow), not production secret volume. Kind's
+            # local-path-provisioner backs PVCs with local host-path
+            # storage, so there is no cloud-billing reason to keep 10Gi
+            # either way — 1Gi is already generous at this scale.
+            size: 1Gi
+            # storageClass left at the chart default (null): Kind ships
+            # local-path-provisioner as the default StorageClass already
+            # (kind.sigs.k8s.io/docs/user/storage/), no need to name it.
+          # Requests/limits mandatory per docs/conventions.md. Unchanged from
+          # the prior dev-mode sizing — standalone mode with file storage
+          # adds no measured extra load at this lab's data volume.
           resources:
             requests:
               cpu: 250m
