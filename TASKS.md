@@ -102,30 +102,21 @@
   `docs/runbooks/airflow-observability-verification.md`: DAG trigger/
   poll/verify + Grafana dashboard/datasource checks, grounded in Phase
   7's real live-verification bugs. PR #52.
-- [done] (app-developer) backend `/metrics` via `prom-client` (11/11
-  tests pass on Node 22) + new isolated `mermaid-lint.yml` CI job
-  validating all Mermaid diagrams with `mmdc`. PR #58, merged. Follow-up
-  fix (libasound2 rename on ubuntu-latest 24.04): PR #60.
+## Post-Phase-7 local hardening round (ADR-004, Kind) — DONE, not phase-gating
 
-## Vault storage re-evaluation (owner: security-engineer) — not phase-gating
-
-- (security-engineer) Re-evaluated ADR-006 Decision 1 (dev-mode storage)
-  after 4 dev-mode data-loss incidents (Phases 3/5/6/7). Switched Vault to
-  standalone mode + `file` storage on a local PVC (Kind's default
-  StorageClass); manual unseal after restart accepted as trade-off, no
-  KMS. `scripts/bootstrap-vault.sh` trimmed to one-time init; new
-  `scripts/unseal-vault.sh` for restarts. ADR-006 Decision 2 (Kubernetes
-  auth for ESO) untouched. Key decision: ADR-022 (supersedes ADR-006
-  Decision 1 only; updates ADR-010). PR #57, merged.
-
-- [review] (platform-engineer) `gitops/services/backend/servicemonitor.yaml`:
-  closes ADR-016's app-instrumentation follow-up for backend. Requires
-  `release: kube-prometheus-stack` label — verified via `helm template`
-  (chart 88.1.3) that `serviceMonitorSelectorNilUsesHelmValues: true`
-  makes the rendered Prometheus CR require this label, contrary to the
-  apparent match-all `serviceMonitorSelector: {}`. Branch
-  `phase-7/backend-servicemonitor`, PR #59, not yet merged. No
-  live-cluster check (Kind not running).
+- Summary: LICENSE (PR #56); Vault standalone + `file` storage on a local
+  PVC, ADR-022 supersedes ADR-006 Decision 1 only (PR #57); backend
+  `/metrics` + `mermaid-lint.yml` CI (PR #58); backend `ServiceMonitor`
+  (PR #59). Live validation on Kind surfaced and fixed 5 real bugs no
+  static review caught: `libasound2` rename on `ubuntu-latest` (PR #60),
+  pending image-bump PR (PR #61), missing `app: backend` Service label
+  blocking ServiceMonitor selection (PR #62), two Vault standalone
+  bootstrap/unseal script gaps (PR #63), and a Postgres/Redis/RabbitMQ
+  password-drift recovery (manual `ALTER ROLE` + pod restarts, follow-up
+  issue #64 to close the drift class via CloudNativePG `managed.roles`).
+  All exit gates confirmed live: Vault survives a restart with one manual
+  unseal, backend target `up` in Prometheus with a queryable metric,
+  mermaid-lint fails a broken diagram and passes the real repo.
 
 ## Log
 
