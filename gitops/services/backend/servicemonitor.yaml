@@ -54,8 +54,10 @@
 # name: "kube-prometheus-stack". Without this label, Prometheus would never
 # select this ServiceMonitor.
 #
-# Sync wave "2": same wave as service.yaml/deployment.yaml — this resource
-# targets the same backend Service and has no reason to reconcile later.
+# Sync wave "2": same wave as service.yaml (deployment.yaml is wave "4",
+# moved there in a Phase 6 fix to avoid a Kafka-auth sync deadlock — see
+# deployment.yaml's own comment). This resource targets the Service, not
+# the Deployment, and has no reason to reconcile later than the Service.
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
