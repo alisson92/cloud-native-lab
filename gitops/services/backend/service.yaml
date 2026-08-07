@@ -6,6 +6,18 @@ kind: Service
 metadata:
   name: backend
   namespace: apps
+  # `app: backend` here is a label on the Service OBJECT itself, distinct
+  # from `spec.selector.app: backend` below (which only selects the Pods
+  # this Service routes to). servicemonitor.yaml's `spec.selector.matchLabels`
+  # matches against THIS metadata.labels field per the Prometheus Operator's
+  # ServiceMonitor API reference ("Selector to select Endpoints objects by
+  # corresponding Service labels" —
+  # https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/Documentation/api-reference/api.md#monitoring.coreos.com/v1.ServiceMonitor).
+  # Without it, the ServiceMonitor matches no Service in this namespace at
+  # all (confirmed live: Prometheus enumerated every Service's endpoints in
+  # `apps` and dropped all of them, backend included).
+  labels:
+    app: backend
   annotations:
     # Sync wave "2": grouped with deployment.yaml (both target the same
     # workload rollout).
