@@ -47,8 +47,13 @@ if [[ ! -f "${INIT_FILE}" ]]; then
   exit 1
 fi
 
+# `vault status` exits 2 when sealed (developer.hashicorp.com/vault/docs/
+# commands/status: 0 = unsealed, 1 = error, 2 = sealed) -- `|| true` keeps
+# `set -e` from aborting on that expected exit code, exactly the case this
+# script exists to handle (same pattern as bootstrap-vault.sh's equivalent
+# check).
 status_json="$(kubectl -n "${VAULT_NAMESPACE}" exec "${VAULT_POD}" -- \
-  vault status -format=json)"
+  vault status -format=json || true)"
 sealed="$(echo "${status_json}" | jq -r '.sealed')"
 
 if [[ "${sealed}" != "true" ]]; then
@@ -71,8 +76,9 @@ for key in "${unseal_keys[@]}"; do
     vault operator unseal "${key}" >/dev/null
 done
 
-final_sealed="$(kubectl -n "${VAULT_NAMESPACE}" exec "${VAULT_POD}" -- \
-  vault status -format=json | jq -r '.sealed')"
+final_status_json="$(kubectl -n "${VAULT_NAMESPACE}" exec "${VAULT_POD}" -- \
+  vault status -format=json || true)"
+final_sealed="$(echo "${final_status_json}" | jq -r '.sealed')"
 
 if [[ "${final_sealed}" == "true" ]]; then
   echo "ERROR: Vault is still sealed after applying ${threshold} key shares." >&2

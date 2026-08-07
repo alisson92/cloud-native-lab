@@ -168,6 +168,20 @@ echo "==> Configuring the Kubernetes auth method (idempotent: always overwrites 
 vault_exec write auth/kubernetes/config \
   kubernetes_host="https://kubernetes.default.svc:443"
 
+echo "==> Ensuring the KV v2 secrets engine is enabled at secret/..."
+# Dev mode auto-mounts a v2 KV engine at "secret/" on startup
+# (developer.hashicorp.com/vault/docs/concepts/dev-server); standalone mode
+# starts with no secrets engines beyond Vault's built-in ones, so this must
+# be enabled explicitly the first time (developer.hashicorp.com/vault/docs/
+# secrets/kv/kv-v2, "Setup" section: `vault secrets enable -path=secret
+# kv-v2`). Idempotent for the same reason as the auth method above:
+# enabling an already-enabled mount errors, so check first.
+if ! vault_exec secrets list -format=json | grep -q '"secret/"'; then
+  vault_exec secrets enable -path=secret kv-v2
+else
+  echo "    secret/ KV v2 engine already enabled, skipping."
+fi
+
 # ---------------------------------------------------------------------------
 # secrets-demo (Phase 3 exit-gate demo): gitops/secrets-demo/README.md
 # ---------------------------------------------------------------------------
