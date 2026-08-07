@@ -104,8 +104,8 @@
   7's real live-verification bugs. PR #52.
 - [done] (app-developer) backend `/metrics` via `prom-client` (11/11
   tests pass on Node 22) + new isolated `mermaid-lint.yml` CI job
-  validating all Mermaid diagrams with `mmdc`. Branch
-  `phase-7/backend-metrics-and-mermaid-ci`, not yet PR'd.
+  validating all Mermaid diagrams with `mmdc`. PR #58, merged. Follow-up
+  fix (libasound2 rename on ubuntu-latest 24.04): PR #60.
 
 ## Vault storage re-evaluation (owner: security-engineer) — not phase-gating
 
@@ -116,8 +116,16 @@
   KMS. `scripts/bootstrap-vault.sh` trimmed to one-time init; new
   `scripts/unseal-vault.sh` for restarts. ADR-006 Decision 2 (Kubernetes
   auth for ESO) untouched. Key decision: ADR-022 (supersedes ADR-006
-  Decision 1 only; updates ADR-010). Branch:
-  `phase-7/vault-standalone-storage`, not yet reviewed/merged.
+  Decision 1 only; updates ADR-010). PR #57, merged.
+
+- [review] (platform-engineer) `gitops/services/backend/servicemonitor.yaml`:
+  closes ADR-016's app-instrumentation follow-up for backend. Requires
+  `release: kube-prometheus-stack` label — verified via `helm template`
+  (chart 88.1.3) that `serviceMonitorSelectorNilUsesHelmValues: true`
+  makes the rendered Prometheus CR require this label, contrary to the
+  apparent match-all `serviceMonitorSelector: {}`. Branch
+  `phase-7/backend-servicemonitor`, PR #59, not yet merged. No
+  live-cluster check (Kind not running).
 
 ## Log
 
